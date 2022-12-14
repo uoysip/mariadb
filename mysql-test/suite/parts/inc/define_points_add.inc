@@ -14,6 +14,7 @@ let $points= 'add_partition_1',
   'add_partition_7',
   'add_partition_8';
 
+# EOF is not the crash point
 let $fail_points= $points, $fail_points, 'EOF';
 let $crash_points= $points, $crash_points,
   'fail_partition_1,fail_add_partition_5,',
