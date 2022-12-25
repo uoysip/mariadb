@@ -1313,9 +1313,6 @@ static int ddl_log_execute_action(THD *thd, MEM_ROOT *mem_root,
   uint entry_pos= ddl_log_entry->entry_pos;
   int error= 0;
   uint fn_flags= 0;
-#ifdef HAVE_PSI_FILE_INTERFACE
-  PSI_file_key key= key_file_misc;
-#endif
   const bool alter_partition= ddl_log_entry->flags & DDL_LOG_FLAG_ALTER_PARTITION;
   DBUG_ENTER("ddl_log_execute_action");
 
@@ -1346,12 +1343,6 @@ static int ddl_log_execute_action(THD *thd, MEM_ROOT *mem_root,
   bool frm_action= FALSE;
   if (!strcmp(ddl_log_entry->handler_name.str, reg_ext))
     frm_action= TRUE;
-#endif
-
-#ifdef HAVE_PSI_FILE_INTERFACE
-  if (ddl_log_entry->action_type <= DDL_LOG_FILE_REPLACE_ACTION &&
-      ddl_log_entry->unique_id)
-    key= (PSI_file_key) ddl_log_entry->unique_id;
 #endif
 
   if (ddl_log_entry->handler_name.length)
@@ -1440,7 +1431,7 @@ static int ddl_log_execute_action(THD *thd, MEM_ROOT *mem_root,
     /* DDL_LOG_FILE_REPLACE_ACTION is 2 phases: delete and rename */
     if (ddl_log_entry->phase == 0)
     {
-      if (unlikely((error= mysql_file_delete(key,
+      if (unlikely((error= mysql_file_delete(key_file_misc,
                                              ddl_log_entry->name.str,
                                              MYF(MY_WME | MY_IGNORE_ENOENT)))))
         break;
@@ -1460,7 +1451,7 @@ static int ddl_log_execute_action(THD *thd, MEM_ROOT *mem_root,
   /* fall through */
   case DDL_LOG_FILE_RENAME_ACTION:
   {
-    error= mysql_file_rename(key, ddl_log_entry->from_name.str,
+    error= mysql_file_rename(key_file_misc, ddl_log_entry->from_name.str,
                              ddl_log_entry->name.str, MYF(MY_WME));
     if (increment_phase(entry_pos))
     {
