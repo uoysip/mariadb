@@ -180,6 +180,7 @@ enum enum_ddl_log_alter_table_phase {
 #define DDL_LOG_FLAG_ALTER_PARTITION      (1 << 4)
 #define DDL_LOG_FLAG_FROM_IS_TMP          (1 << 5)
 #define DDL_LOG_FLAG_TO_IS_TMP            (1 << 6)
+#define DDL_LOG_FLAG_USE_HANDLER          (1 << 7)
 
 /*
   Setting ddl_log_entry.phase to this has the same effect as setting

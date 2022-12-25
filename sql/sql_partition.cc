@@ -6183,7 +6183,7 @@ public:
   bool build_names(partition_element *part_elem, partition_element *sub_elem)
   {
     bzero(&ddl_log_entry, sizeof(ddl_log_entry));
-    ddl_log_entry.flags= DDL_LOG_FLAG_ALTER_PARTITION;
+    ddl_log_entry.flags= DDL_LOG_FLAG_ALTER_PARTITION | DDL_LOG_FLAG_USE_HANDLER;
 
     DBUG_ASSERT(lpt->thd->mdl_context.is_lock_owner(MDL_key::TABLE,
                                                     table->s->db.str,

@@ -1345,7 +1345,7 @@ static int ddl_log_execute_action(THD *thd, MEM_ROOT *mem_root,
     frm_action= TRUE;
 #endif
 
-  if (ddl_log_entry->handler_name.length)
+  if (ddl_log_entry->flags & DDL_LOG_FLAG_USE_HANDLER)
   {
     if (!(file= create_handler(thd, mem_root, &handler_name)))
     {
@@ -3252,7 +3252,7 @@ bool ddl_log_rename_table(DDL_LOG_STATE *ddl_state,
   ddl_log_entry.from_db=      *const_cast<LEX_CSTRING*>(org_db);
   ddl_log_entry.from_name=    *const_cast<LEX_CSTRING*>(org_alias);
   ddl_log_entry.phase=        (uchar) phase;
-  ddl_log_entry.flags=        flags;
+  ddl_log_entry.flags=        flags | DDL_LOG_FLAG_USE_HANDLER;
 
   DBUG_RETURN(ddl_log_write(ddl_state, &ddl_log_entry));
 }
@@ -3367,15 +3367,18 @@ static bool ddl_log_drop(DDL_LOG_STATE *ddl_state,
 
   ddl_log_entry.action_type=  action_code;
   ddl_log_entry.next_entry=   ddl_state->drop_prev_entry ? ddl_state->drop_prev_entry->entry_pos : 0;
+  ddl_log_entry.flags=        flags;
 
   if (hton)
+  {
     lex_string_set(&ddl_log_entry.handler_name,
                    ha_resolve_storage_engine_name(hton));
+    ddl_log_entry.flags|= DDL_LOG_FLAG_USE_HANDLER;
+  }
   ddl_log_entry.db=           *const_cast<LEX_CSTRING*>(db);
   ddl_log_entry.name=         *const_cast<LEX_CSTRING*>(table);
   ddl_log_entry.tmp_name=     *const_cast<LEX_CSTRING*>(path);
   ddl_log_entry.phase=        (uchar) phase;
-  ddl_log_entry.flags=        flags;
 
   mysql_mutex_lock(&LOCK_gdl);
   if (ddl_log_write_entry(&ddl_log_entry, &log_entry))
@@ -3530,13 +3533,16 @@ bool ddl_log_create_table(DDL_LOG_STATE *ddl_state,
 
   bzero(&ddl_log_entry, sizeof(ddl_log_entry));
   ddl_log_entry.action_type= DDL_LOG_CREATE_TABLE_ACTION;
+  ddl_log_entry.flags=       0;
   if (hton)
+  {
     lex_string_set(&ddl_log_entry.handler_name,
                    ha_resolve_storage_engine_name(hton));
+    ddl_log_entry.flags|= DDL_LOG_FLAG_USE_HANDLER;
+  }
   ddl_log_entry.db=           *const_cast<LEX_CSTRING*>(db);
   ddl_log_entry.name=         *const_cast<LEX_CSTRING*>(table);
   ddl_log_entry.tmp_name=     *const_cast<LEX_CSTRING*>(path);
-  ddl_log_entry.flags=        0;
   /* Needed for finalize_atomic_replace() which logs 2 events. */
   ddl_log_entry.next_entry=   ddl_state->list ? ddl_state->list->entry_pos : 0;
 
@@ -3638,9 +3644,13 @@ bool ddl_log_alter_table(DDL_LOG_STATE *ddl_state,
 
   bzero(&ddl_log_entry, sizeof(ddl_log_entry));
   ddl_log_entry.action_type=  DDL_LOG_ALTER_TABLE_ACTION;
+  ddl_log_entry.flags=        is_renamed ? DDL_LOG_FLAG_ALTER_RENAME : 0;
   if (new_hton)
+  {
     lex_string_set(&ddl_log_entry.handler_name,
                    ha_resolve_storage_engine_name(new_hton));
+    ddl_log_entry.flags|= DDL_LOG_FLAG_USE_HANDLER;
+  }
   /* Store temporary table name */
   ddl_log_entry.db=           *const_cast<LEX_CSTRING*>(new_db);
   ddl_log_entry.name=         *const_cast<LEX_CSTRING*>(new_table);
@@ -3651,7 +3661,6 @@ bool ddl_log_alter_table(DDL_LOG_STATE *ddl_state,
   ddl_log_entry.from_name=    *const_cast<LEX_CSTRING*>(table);
   ddl_log_entry.tmp_name=     *const_cast<LEX_CSTRING*>(frm_path);
   ddl_log_entry.extra_name=   *const_cast<LEX_CSTRING*>(backup_name);
-  ddl_log_entry.flags=        is_renamed ? DDL_LOG_FLAG_ALTER_RENAME : 0;
   ddl_log_entry.unique_id=    table_version;
 
   /*
