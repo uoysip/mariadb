@@ -3764,6 +3764,7 @@ err:
 }
 
 
+#ifdef WITH_PARTITION_STORAGE_ENGINE
 /**
   Log an delete frm file and par file
 
@@ -3773,6 +3774,7 @@ err:
 bool ddl_log_delete_frm(DDL_LOG_STATE *ddl_state, const char *to_path)
 {
   char to_file[FN_REFLEN + 1];
+  size_t to_len;
   DDL_LOG_ENTRY ddl_log_entry;
   DDL_LOG_MEMORY_ENTRY *log_entry;
   DBUG_ENTER("ddl_log_delete_frm");
@@ -3785,19 +3787,19 @@ bool ddl_log_delete_frm(DDL_LOG_STATE *ddl_state, const char *to_path)
 #endif
 
   mysql_mutex_assert_owner(&LOCK_gdl);
-#ifdef WITH_PARTITION_STORAGE_ENGINE
-  strxmov(to_file, to_path, PAR_EXT, NullS);
-  lex_string_set(&ddl_log_entry.name, to_file);
-  ddl_log_entry.unique_id= (ulonglong) key_file_partition_ddl_log;
+
+  /* Delete PAR_EXT */
+  to_len= strxmov(to_file, to_path, PAR_EXT, NullS) - to_file;
+  lex_string_set3(&ddl_log_entry.name, to_file, to_len);
   if (ddl_log_write_entry(&ddl_log_entry, &log_entry))
     DBUG_RETURN(1);
 
   ddl_log_add_entry(ddl_state, log_entry);
   ddl_log_entry.next_entry= ddl_state->list->entry_pos;
-#endif
-  strxmov(to_file, to_path, reg_ext, NullS);
-  lex_string_set(&ddl_log_entry.name, to_file);
-  ddl_log_entry.unique_id= (ulonglong) key_file_frm;
+  /* Delete PAR_EXT end */
+
+  to_len= strxmov(to_file, to_path, reg_ext, NullS) - to_file;
+  lex_string_set3(&ddl_log_entry.name, to_file, to_len);
   if (ddl_log_write_entry(&ddl_log_entry, &log_entry))
     DBUG_RETURN(1);
 
@@ -3817,6 +3819,7 @@ bool ddl_log_rename_frm(DDL_LOG_STATE *ddl_state,
                         const char *from_path, const char *to_path)
 {
   char to_file[FN_REFLEN + 1], from_file[FN_REFLEN + 1];
+  size_t to_len, from_len;
   DDL_LOG_ENTRY ddl_log_entry;
   DDL_LOG_MEMORY_ENTRY *log_entry;
   DBUG_ENTER("ddl_log_rename_frm");
@@ -3826,23 +3829,23 @@ bool ddl_log_rename_frm(DDL_LOG_STATE *ddl_state,
   ddl_log_entry.next_entry= ddl_state->list ? ddl_state->list->entry_pos : 0;
 
   mysql_mutex_assert_owner(&LOCK_gdl);
-#ifdef WITH_PARTITION_STORAGE_ENGINE
-  strxmov(to_file, to_path, PAR_EXT, NullS);
-  strxmov(from_file, from_path, PAR_EXT, NullS);
-  lex_string_set(&ddl_log_entry.name, to_file);
-  lex_string_set(&ddl_log_entry.from_name, from_file);
-  ddl_log_entry.unique_id= (ulonglong) key_file_partition_ddl_log;
+
+  /* Rename PAR_EXT */
+  to_len= strxmov(to_file, to_path, PAR_EXT, NullS) - to_file;
+  from_len= strxmov(from_file, from_path, PAR_EXT, NullS) - from_file;
+  lex_string_set3(&ddl_log_entry.name, to_file, to_len);
+  lex_string_set3(&ddl_log_entry.from_name, from_file, from_len);
   if (ddl_log_write_entry(&ddl_log_entry, &log_entry))
     DBUG_RETURN(1);
 
   ddl_log_add_entry(ddl_state, log_entry);
   ddl_log_entry.next_entry= ddl_state->list->entry_pos;
-#endif
-  strxmov(to_file, to_path, reg_ext, NullS);
-  strxmov(from_file, from_path, reg_ext, NullS);
-  lex_string_set(&ddl_log_entry.name, to_file);
-  lex_string_set(&ddl_log_entry.from_name, from_file);
-  ddl_log_entry.unique_id= (ulonglong) key_file_frm;
+/* Rename PAR_EXT end */
+
+  to_len= strxmov(to_file, to_path, reg_ext, NullS) - to_file;
+  from_len= strxmov(from_file, from_path, reg_ext, NullS) - from_file;
+  lex_string_set3(&ddl_log_entry.name, to_file, to_len);
+  lex_string_set3(&ddl_log_entry.from_name, from_file, from_len);
 
   if (ddl_log_write_entry(&ddl_log_entry, &log_entry))
     DBUG_RETURN(true);
@@ -3850,6 +3853,7 @@ bool ddl_log_rename_frm(DDL_LOG_STATE *ddl_state,
   ddl_log_add_entry(ddl_state, log_entry);
   DBUG_RETURN(false);
 }
+#endif /* WITH_PARTITION_STORAGE_ENGINE */
 
 
 /*
