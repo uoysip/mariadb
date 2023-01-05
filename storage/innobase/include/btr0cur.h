@@ -1,7 +1,7 @@
 /*****************************************************************************
 
 Copyright (c) 1994, 2019, Oracle and/or its affiliates. All Rights Reserved.
-Copyright (c) 2017, 2022, MariaDB Corporation.
+Copyright (c) 2017, 2023, MariaDB Corporation.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -802,6 +802,17 @@ struct btr_cur_t {
   @return error code */
   dberr_t open_leaf(bool first, dict_index_t *index, btr_latch_mode latch_mode,
                     mtr_t *mtr);
+
+  /** Search the leaf page record corresponding to a key.
+  @tparam mode      search mode; PAGE_CUR_LE for unique prefix or for inserting
+  @param tuple      key to search for, with correct n_fields_cmp
+  @param latch_mode latch mode
+  @param mtr        mini-transaction
+  @param autoinc    PAGE_ROOT_AUTO_INC to be written (0 if none)
+  @return error code */
+  template<page_cur_mode_t mode>
+  dberr_t search_leaf(const dtuple_t *tuple, btr_latch_mode latch_mode,
+                      mtr_t *mtr, uint64_t autoinc= 0);
 
   /** Open the cursor at a random leaf page record.
   @param offsets   temporary memory for rec_get_offsets()

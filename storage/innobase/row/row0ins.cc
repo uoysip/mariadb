@@ -1621,8 +1621,8 @@ row_ins_check_foreign_constraint(
 
 	dtuple_set_n_fields_cmp(entry, foreign->n_fields);
 	pcur.btr_cur.page_cur.index = check_index;
-	err = btr_pcur_open(entry, PAGE_CUR_GE, BTR_SEARCH_LEAF, &pcur, 0,
-			    &mtr);
+	err = btr_pcur_open<PAGE_CUR_GE>(entry, BTR_SEARCH_LEAF, &pcur, 0,
+					 &mtr);
 	if (UNIV_UNLIKELY(err != DB_SUCCESS)) {
 		goto end_scan;
 	}
@@ -2118,8 +2118,8 @@ row_ins_scan_sec_index_for_duplicate(
 	dtuple_set_n_fields_cmp(entry, n_unique);
 	pcur.btr_cur.page_cur.index = index;
 	trx_t* const trx = thr_get_trx(thr);
-	dberr_t err = btr_pcur_open(entry, PAGE_CUR_GE, BTR_SEARCH_LEAF,
-				    &pcur, 0, mtr);
+	dberr_t err = btr_pcur_open<PAGE_CUR_GE>(entry, BTR_SEARCH_LEAF,
+						 &pcur, 0, mtr);
 	if (err != DB_SUCCESS) {
 		goto end_scan;
 	}
@@ -2539,8 +2539,8 @@ row_ins_index_entry_big_rec(
 		index->set_modified(mtr);
 	}
 
-	dberr_t error = btr_pcur_open(entry, PAGE_CUR_LE,
-				      BTR_MODIFY_TREE, &pcur, 0, &mtr);
+	dberr_t error = btr_pcur_open<PAGE_CUR_LE>(entry, BTR_MODIFY_TREE,
+						   &pcur, 0, &mtr);
 	if (error != DB_SUCCESS) {
 		return error;
 	}
@@ -2667,7 +2667,7 @@ row_ins_clust_index_entry_low(
 	the function will return in both low_match and up_match of the
 	cursor sensible values */
 	pcur.btr_cur.page_cur.index = index;
-	err = btr_pcur_open(entry, PAGE_CUR_LE, mode, &pcur, auto_inc, &mtr);
+	err = btr_pcur_open<PAGE_CUR_LE>(entry, mode, &pcur, auto_inc, &mtr);
 	if (err != DB_SUCCESS) {
 		index->table->file_unreadable = true;
 commit_exit:
@@ -2949,9 +2949,7 @@ row_ins_sec_index_entry_low(
 		rtr_init_rtr_info(&rtr_info, false, &cursor, index, false);
 		rtr_info_update_btr(&cursor, &rtr_info);
 
-		err = btr_cur_search_to_nth_level(0, entry,
-						  PAGE_CUR_RTREE_INSERT,
-						  search_mode, &cursor, &mtr);
+		err = rtr_insert_leaf(&cursor, entry, search_mode, &mtr);
 
 		if (err == DB_SUCCESS && search_mode == BTR_MODIFY_LEAF
 		    && rtr_info.mbr_adj) {
@@ -2967,9 +2965,8 @@ row_ins_sec_index_entry_low(
 			} else {
 				index->set_modified(mtr);
 			}
-			err = btr_cur_search_to_nth_level(
-				0, entry, PAGE_CUR_RTREE_INSERT,
-				search_mode, &cursor, &mtr);
+			err = rtr_insert_leaf(&cursor, entry,
+					      search_mode, &mtr);
 		}
 
 		DBUG_EXECUTE_IF(
@@ -2985,8 +2982,8 @@ row_ins_sec_index_entry_low(
 				   : BTR_INSERT));
 		}
 
-		err = btr_cur_search_to_nth_level(0, entry, PAGE_CUR_LE,
-						  search_mode, &cursor, &mtr);
+		err = cursor.search_leaf<PAGE_CUR_LE>(entry, search_mode,
+						      &mtr);
 	}
 
 	if (err != DB_SUCCESS) {
@@ -3062,12 +3059,11 @@ row_ins_sec_index_entry_low(
 		prevent any insertion of a duplicate by another
 		transaction. Let us now reposition the cursor and
 		continue the insertion (bypassing the change buffer). */
-		err = btr_cur_search_to_nth_level(
-			0, entry, PAGE_CUR_LE,
-			btr_latch_mode(search_mode
-				       & ~(BTR_INSERT
-					   | BTR_IGNORE_SEC_UNIQUE)),
-			&cursor, &mtr);
+		err = cursor.search_leaf<PAGE_CUR_LE>(
+			entry, btr_latch_mode(search_mode
+					      & ~(BTR_INSERT
+						  | BTR_IGNORE_SEC_UNIQUE)),
+			&mtr);
 		if (err != DB_SUCCESS) {
 			goto func_exit;
 		}

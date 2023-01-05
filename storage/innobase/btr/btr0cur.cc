@@ -1197,6 +1197,31 @@ static ulint btr_node_ptr_max_size(const dict_index_t* index)
 	return rec_max_size;
 }
 
+template<page_cur_mode_t mode>
+dberr_t btr_cur_t::search_leaf(const dtuple_t *tuple,
+                               btr_latch_mode latch_mode, mtr_t *mtr,
+                               uint64_t autoinc)
+{
+  static_assert(mode == PAGE_CUR_G || mode == PAGE_CUR_GE ||
+                mode == PAGE_CUR_L || mode == PAGE_CUR_LE, "");
+  // TODO: implement this specially, or specialize further
+  return btr_cur_search_to_nth_level(0, tuple, mode, latch_mode, this, mtr,
+                                     autoinc);
+}
+
+template
+dberr_t btr_cur_t::search_leaf<PAGE_CUR_G>(const dtuple_t *, btr_latch_mode,
+                                           mtr_t *, uint64_t);
+template
+dberr_t btr_cur_t::search_leaf<PAGE_CUR_GE>(const dtuple_t *, btr_latch_mode,
+                                            mtr_t *, uint64_t);
+template
+dberr_t btr_cur_t::search_leaf<PAGE_CUR_L>(const dtuple_t *, btr_latch_mode,
+                                           mtr_t *, uint64_t);
+template
+dberr_t btr_cur_t::search_leaf<PAGE_CUR_LE>(const dtuple_t *, btr_latch_mode,
+                                            mtr_t *, uint64_t);
+
 /********************************************************************//**
 Searches an index tree and positions a tree cursor on a given level.
 NOTE: n_fields_cmp in tuple must be set so that it cannot be compared
@@ -1410,6 +1435,9 @@ dberr_t btr_cur_search_to_nth_level(ulint level,
 
 	switch (latch_mode) {
 	case BTR_MODIFY_TREE:
+#if 1 // Work around MDEV-29835 hangs
+		mtr_x_lock_index(index, mtr);
+#else
 		/* Most of delete-intended operations are purging.
 		Free blocks and read IO bandwidth should be prior
 		for them, when the history list is glowing huge. */
@@ -1428,6 +1456,7 @@ x_latch_index:
 		} else {
 			mtr_sx_lock_index(index, mtr);
 		}
+#endif
 		upper_rw_latch = RW_X_LATCH;
 		break;
 	case BTR_CONT_MODIFY_TREE:
