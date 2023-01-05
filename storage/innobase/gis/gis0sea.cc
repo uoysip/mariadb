@@ -1,7 +1,7 @@
 /*****************************************************************************
 
 Copyright (c) 2016, 2018, Oracle and/or its affiliates. All Rights Reserved.
-Copyright (c) 2017, 2022, MariaDB Corporation.
+Copyright (c) 2017, 2023, MariaDB Corporation.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -135,6 +135,7 @@ rtr_pcur_getnext_from_path(
 		&& (my_latch_mode | 4) == BTR_CONT_MODIFY_TREE;
 
 	if (!index_locked) {
+		ut_ad(mtr->is_empty());
 		mtr_s_lock_index(index, mtr);
 	} else {
 		ut_ad(mtr->memo_contains_flagged(&index->lock,
@@ -154,14 +155,12 @@ rtr_pcur_getnext_from_path(
 		node_seq_t	path_ssn;
 		const page_t*	page;
 		rw_lock_type_t	rw_latch;
-		ulint		tree_idx;
 
 		mysql_mutex_lock(&rtr_info->rtr_path_mutex);
 		next_rec = rtr_info->path->back();
 		rtr_info->path->pop_back();
 		level = next_rec.level;
 		path_ssn = next_rec.seq_no;
-		tree_idx = btr_cur->tree_height - level - 1;
 
 		/* Maintain the parent path info as well, if needed */
 		if (need_parent && !skip_parent && !new_split) {
@@ -223,32 +222,9 @@ rtr_pcur_getnext_from_path(
 			rw_latch = RW_X_LATCH;
 		}
 
-		/* Release previous locked blocks */
-		if (my_latch_mode != BTR_SEARCH_LEAF) {
-			for (ulint idx = 0; idx < btr_cur->tree_height;
-			     idx++) {
-				if (rtr_info->tree_blocks[idx]) {
-					mtr_release_block_at_savepoint(
-						mtr,
-						rtr_info->tree_savepoints[idx],
-						rtr_info->tree_blocks[idx]);
-					rtr_info->tree_blocks[idx] = NULL;
-				}
-			}
-			for (ulint idx = RTR_MAX_LEVELS; idx < RTR_MAX_LEVELS + 3;
-			     idx++) {
-				if (rtr_info->tree_blocks[idx]) {
-					mtr_release_block_at_savepoint(
-						mtr,
-						rtr_info->tree_savepoints[idx],
-						rtr_info->tree_blocks[idx]);
-					rtr_info->tree_blocks[idx] = NULL;
-				}
-			}
+		if (my_latch_mode == BTR_MODIFY_LEAF) {
+			mtr->rollback_to_savepoint(1);
 		}
-
-		/* set up savepoint to record any locks to be taken */
-		rtr_info->tree_savepoints[tree_idx] = mtr_set_savepoint(mtr);
 
 		ut_ad((my_latch_mode | 4) == BTR_CONT_MODIFY_TREE
 		      || !page_is_leaf(btr_cur_get_page(btr_cur))
@@ -263,8 +239,6 @@ rtr_pcur_getnext_from_path(
 			found = false;
 			break;
 		}
-
-		rtr_info->tree_blocks[tree_idx] = block;
 
 		page = buf_block_get_frame(block);
 		page_ssn = page_get_ssn_id(page);
@@ -425,13 +399,7 @@ rtr_pcur_getnext_from_path(
 			last node just located */
 			skip_parent = true;
 		} else {
-			/* Release latch on the current page */
-			ut_ad(rtr_info->tree_blocks[tree_idx]);
-
-			mtr_release_block_at_savepoint(
-				mtr, rtr_info->tree_savepoints[tree_idx],
-				rtr_info->tree_blocks[tree_idx]);
-			rtr_info->tree_blocks[tree_idx] = NULL;
+			mtr->release_last_page();
 		}
 
 	} while (!rtr_info->path->empty());
@@ -535,43 +503,45 @@ dberr_t rtr_insert_leaf(btr_cur_t *cur, const dtuple_t *tuple,
 
 /**************************************************************//**
 Initializes and opens a persistent cursor to an index tree. It should be
-closed with btr_pcur_close. Mainly called by row_search_index_entry() */
-bool
-rtr_pcur_open(
-	dict_index_t*	index,	/*!< in: index */
+closed with btr_pcur_close. */
+bool rtr_search(
 	const dtuple_t*	tuple,	/*!< in: tuple on which search done */
-	btr_latch_mode	latch_mode,/*!< in: BTR_SEARCH_LEAF, ... */
+	btr_latch_mode	latch_mode,/*!< in: BTR_MODIFY_LEAF, ... */
 	btr_pcur_t*	cursor, /*!< in: memory buffer for persistent cursor */
 	mtr_t*		mtr)	/*!< in: mtr */
 {
 	static_assert(BTR_MODIFY_TREE == (8 | BTR_MODIFY_LEAF), "");
 	ut_ad(latch_mode & BTR_MODIFY_LEAF);
+	ut_ad(!(latch_mode & BTR_ALREADY_S_LATCHED));
+	ut_ad(mtr->is_empty());
 
 	/* Initialize the cursor */
 
 	btr_pcur_init(cursor);
 
 	cursor->latch_mode = BTR_LATCH_MODE_WITHOUT_FLAGS(latch_mode);
-	cursor->search_mode =  PAGE_CUR_RTREE_LOCATE;
-	cursor->trx_if_known = NULL;
+	cursor->search_mode = PAGE_CUR_RTREE_LOCATE;
+	cursor->trx_if_known = nullptr;
+
+	if (latch_mode & 8) {
+		mtr_x_lock_index(cursor->index(), mtr);
+	} else {
+		latch_mode
+			= btr_latch_mode(latch_mode | BTR_ALREADY_S_LATCHED);
+		mtr_sx_lock_index(cursor->index(), mtr);
+	}
 
 	/* Search with the tree cursor */
 
 	btr_cur_t* btr_cursor = btr_pcur_get_btr_cur(cursor);
-	btr_cursor->page_cur.index = index;
 
-	btr_cursor->rtr_info = rtr_create_rtr_info(false, false,
-						   btr_cursor, index);
+	btr_cursor->rtr_info
+		= rtr_create_rtr_info(false, false,
+				      btr_cursor, cursor->index());
 
-	/* Purge will SX lock the tree instead of take Page Locks */
 	if (btr_cursor->thr) {
 		btr_cursor->rtr_info->need_page_lock = true;
 		btr_cursor->rtr_info->thr = btr_cursor->thr;
-	}
-
-	if ((latch_mode & 8) && index->lock.have_u_not_x()) {
-		index->lock.u_x_upgrade(SRW_LOCK_CALL);
-		mtr->lock_upgrade(index->lock);
 	}
 
 	if (rtr_search_leaf(btr_cursor, tuple, latch_mode, mtr)
@@ -583,7 +553,8 @@ rtr_pcur_open(
 
 	const rec_t* rec = btr_pcur_get_rec(cursor);
 
-	const bool d= rec_get_deleted_flag(rec, index->table->not_redundant());
+	const bool d= rec_get_deleted_flag(
+		rec, cursor->index()->table->not_redundant());
 
 	if (page_rec_is_infimum(rec)
 	    || btr_pcur_get_low_match(cursor) != dtuple_get_n_fields(tuple)
@@ -594,31 +565,21 @@ rtr_pcur_open(
 			btr_cursor->rtr_info->fd_del = true;
 			btr_cursor->low_match = 0;
 		}
-		/* Did not find matched row in first dive. Release
-		latched block if any before search more pages */
-		if (!(latch_mode & 8)) {
-			ulint		tree_idx = btr_cursor->tree_height - 1;
-			rtr_info_t*	rtr_info = btr_cursor->rtr_info;
 
-			if (rtr_info->tree_blocks[tree_idx]) {
-				mtr_release_block_at_savepoint(
-					mtr,
-					rtr_info->tree_savepoints[tree_idx],
-					rtr_info->tree_blocks[tree_idx]);
-				rtr_info->tree_blocks[tree_idx] = NULL;
-			}
-		}
+		mtr->rollback_to_savepoint(1);
 
 		if (!rtr_pcur_getnext_from_path(tuple, PAGE_CUR_RTREE_LOCATE,
 						btr_cursor, 0, latch_mode,
-						latch_mode
-						& (8 | BTR_ALREADY_S_LATCHED),
-						mtr)) {
+						true, mtr)) {
 			return true;
 		}
 
 		ut_ad(btr_pcur_get_low_match(cursor)
 		      == dtuple_get_n_fields(tuple));
+	}
+
+	if (!(latch_mode & 8)) {
+		mtr->rollback_to_savepoint(0, 1);
 	}
 
 	return false;
@@ -902,32 +863,10 @@ rtr_init_rtr_info(
 
 	if (!reinit) {
 		/* Reset all members. */
-		rtr_info->path = NULL;
-		rtr_info->parent_path = NULL;
-		rtr_info->matches = NULL;
-
+		memset(rtr_info, 0, sizeof *rtr_info);
+		static_assert(PAGE_CUR_UNSUPP == 0, "compatibility");
 		mysql_mutex_init(rtr_path_mutex_key, &rtr_info->rtr_path_mutex,
 				 nullptr);
-
-		memset(rtr_info->tree_blocks, 0x0,
-		       sizeof(rtr_info->tree_blocks));
-		memset(rtr_info->tree_savepoints, 0x0,
-		       sizeof(rtr_info->tree_savepoints));
-		rtr_info->mbr.xmin = 0.0;
-		rtr_info->mbr.xmax = 0.0;
-		rtr_info->mbr.ymin = 0.0;
-		rtr_info->mbr.ymax = 0.0;
-		rtr_info->thr = NULL;
-		rtr_info->heap = NULL;
-		rtr_info->cursor = NULL;
-		rtr_info->index = NULL;
-		rtr_info->need_prdt_lock = false;
-		rtr_info->need_page_lock = false;
-		rtr_info->allocated = false;
-		rtr_info->mbr_adj = false;
-		rtr_info->fd_del = false;
-		rtr_info->search_tuple = NULL;
-		rtr_info->search_mode = PAGE_CUR_UNSUPP;
 	}
 
 	ut_ad(!rtr_info->matches || rtr_info->matches->matched_recs->empty());

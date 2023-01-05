@@ -63,12 +63,6 @@ enum {
 	BTR_KEEP_IBUF_BITMAP = 32
 };
 
-/* btr_cur_latch_leaves() returns latched blocks and savepoints. */
-struct btr_latch_leaves_t {
-	buf_block_t*	blocks[3];
-	ulint		savepoints[3];
-};
-
 #include "que0types.h"
 #include "row0types.h"
 
@@ -657,15 +651,13 @@ btr_rec_copy_externally_stored_field(
 @param[in]	block		leaf page where the search converged
 @param[in]	latch_mode	BTR_SEARCH_LEAF, ...
 @param[in]	cursor		cursor
-@param[in,out]	mtr		mini-transaction
-@param[out]	latch_leaves	latched blocks and savepoints */
+@param[in,out]	mtr		mini-transaction */
 void
 btr_cur_latch_leaves(
 	buf_block_t*		block,
 	btr_latch_mode		latch_mode,
 	btr_cur_t*		cursor,
-	mtr_t*			mtr,
-	btr_latch_leaves_t*	latch_leaves = nullptr);
+	mtr_t*			mtr);
 
 /*######################################################################*/
 

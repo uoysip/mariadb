@@ -1,7 +1,7 @@
 /*****************************************************************************
 
 Copyright (c) 1996, 2018, Oracle and/or its affiliates. All Rights Reserved.
-Copyright (c) 2018, 2022, MariaDB Corporation.
+Copyright (c) 2018, 2023, MariaDB Corporation.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -1278,21 +1278,14 @@ row_search_index_entry(
 
 	ut_ad(dtuple_check_typed(entry));
 
-	if (pcur->index()->is_spatial()) {
-		if (rtr_pcur_open(pcur->index(), entry, mode, pcur, mtr)) {
-			return ROW_NOT_FOUND;
-		}
-	} else {
-		if (btr_pcur_open<PAGE_CUR_LE>(entry, mode, pcur, 0, mtr)
-		    != DB_SUCCESS) {
-			return ROW_NOT_FOUND;
-		}
+	if (btr_pcur_open<PAGE_CUR_LE>(entry, mode, pcur, 0, mtr)
+	    != DB_SUCCESS) {
+		return ROW_NOT_FOUND;
 	}
 
 	switch (btr_pcur_get_btr_cur(pcur)->flag) {
 	case BTR_CUR_DELETE_REF:
 		ut_ad(!(~mode & BTR_DELETE));
-		ut_ad(!pcur->index()->is_spatial());
 		return(ROW_NOT_DELETED_REF);
 
 	case BTR_CUR_DEL_MARK_IBUF:

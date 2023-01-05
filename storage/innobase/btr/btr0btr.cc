@@ -2,7 +2,7 @@
 
 Copyright (c) 1994, 2016, Oracle and/or its affiliates. All Rights Reserved.
 Copyright (c) 2012, Facebook Inc.
-Copyright (c) 2014, 2022, MariaDB Corporation.
+Copyright (c) 2014, 2023, MariaDB Corporation.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -523,7 +523,7 @@ btr_page_alloc_low(
 #ifdef BTR_CUR_HASH_ADAPT
     ut_ad(!root->index || !root->index->freed());
 #endif
-    mtr->release_block_at_savepoint(savepoint, root);
+    mtr->rollback_to_savepoint(savepoint);
   }
   else
   {
@@ -637,7 +637,7 @@ dberr_t btr_page_free(dict_index_t* index, buf_block_t* block, mtr_t* mtr,
 #ifdef BTR_CUR_HASH_ADAPT
       ut_ad(!root->index || !root->index->freed());
 #endif
-      mtr->release_block_at_savepoint(savepoint, root);
+      mtr->rollback_to_savepoint(savepoint);
     }
     else
     {
@@ -4810,7 +4810,6 @@ btr_validate_level(
 	page_zip_des_t*	page_zip;
 #endif /* UNIV_ZIP_DEBUG */
 	ulint		savepoint = 0;
-	ulint		savepoint2 = 0;
 	uint32_t	parent_page_no = FIL_NULL;
 	uint32_t	parent_right_page_no = FIL_NULL;
 	bool		rightmost_child = false;
@@ -4870,7 +4869,6 @@ corrupted:
 		offsets = rec_get_offsets(node_ptr, index, offsets, 0,
 					  ULINT_UNDEFINED, &heap);
 
-		savepoint2 = mtr_set_savepoint(&mtr);
 		block = btr_node_ptr_get_child(node_ptr, index, offsets, &mtr,
 					       &err);
 		if (!block) {
@@ -4891,10 +4889,8 @@ corrupted:
 				/* To obey latch order of tree blocks,
 				we should release the right_block once to
 				obtain lock of the uncle block. */
-				mtr_release_block_at_savepoint(
-					&mtr, savepoint2, block);
+				mtr.release_last_page();
 
-				savepoint2 = mtr_set_savepoint(&mtr);
 				block = btr_block_get(*index, left_page_no,
 						      RW_SX_LATCH, false,
 						      &mtr, &err);
@@ -4972,7 +4968,7 @@ func_exit:
 
 	if (right_page_no != FIL_NULL) {
 		const rec_t*	right_rec;
-		savepoint = mtr_set_savepoint(&mtr);
+		savepoint = mtr.get_savepoint();
 
 		right_block = btr_block_get(*index, right_page_no, RW_SX_LATCH,
 					    !level, &mtr, &err);
@@ -5167,8 +5163,10 @@ broken_links:
 				/* To obey latch order of tree blocks,
 				we should release the right_block once to
 				obtain lock of the uncle block. */
-				mtr_release_block_at_savepoint(
-					&mtr, savepoint, right_block);
+				ut_ad(right_block
+				      == mtr.at_savepoint(savepoint));
+				mtr.rollback_to_savepoint(savepoint,
+							  savepoint + 1);
 
 				if (parent_right_page_no != FIL_NULL) {
 					btr_block_get(*index,
