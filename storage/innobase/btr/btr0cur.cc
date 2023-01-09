@@ -1142,8 +1142,11 @@ dberr_t btr_cur_t::search_leaf(const dtuple_t *tuple,
   static_assert(mode == PAGE_CUR_G || mode == PAGE_CUR_GE ||
                 mode == PAGE_CUR_L || mode == PAGE_CUR_LE, "");
   // TODO: implement this specially, or specialize further
-  return btr_cur_search_to_nth_level(0, tuple, mode, latch_mode, this, mtr,
-                                     autoinc);
+  dberr_t err= btr_cur_search_to_nth_level(0, tuple, mode, latch_mode, this,
+                                           mtr, autoinc);
+  ut_ad(err || (latch_mode & BTR_DELETE) ||
+        page_is_leaf(btr_cur_get_page(this)));
+  return err;
 }
 
 template
@@ -1216,7 +1219,7 @@ dberr_t btr_cur_search_to_nth_level(ulint level,
 	bool		detected_same_key_root = false;
 
 	ulint		leftmost_from_level = 0;
-	bool		prev_tree_blocks = false;
+	ulint		prev_tree_level = 0;
 	bool		need_path = true;
 	bool		rtree_parent_modified = false;
 	bool		mbr_adj = false;
@@ -1478,7 +1481,7 @@ search_loop:
 	if (height != 0) {
 		/* We are about to fetch the root or a non-leaf page. */
 		if ((latch_mode != BTR_MODIFY_TREE || height == level)
-		    && !prev_tree_blocks) {
+		    && !prev_tree_level) {
 			/* If doesn't have SX or X latch of index,
 			each pages should be latched before reading. */
 			if (height == ULINT_UNDEFINED
@@ -1608,7 +1611,7 @@ func_exit:
 		goto retry_page_get;
 	}
 
-	if (height && prev_tree_blocks) {
+	if (height && prev_tree_level) {
 		/* also latch left sibling */
 		ut_ad(rw_latch == RW_NO_LATCH);
 
@@ -1710,7 +1713,7 @@ func_exit:
 		case BTR_CONT_SEARCH_TREE:
 			break;
 		default:
-			ut_ad(!prev_tree_blocks || !autoinc);
+			ut_ad(!prev_tree_level || !autoinc);
 			if (!latch_by_caller
 			    && !srv_read_only_mode) {
 				/* Release the tree s-latch */
@@ -2050,7 +2053,7 @@ need_opposite_intention:
 		/* We should consider prev_page of parent page, if the node_ptr
 		is the leftmost of the page. because BTR_SEARCH_PREV and
 		BTR_MODIFY_PREV latches prev_page of the leaf page. */
-		if (!prev_tree_blocks
+		if (!prev_tree_level
 		    && (latch_mode == BTR_SEARCH_PREV
 			|| latch_mode == BTR_MODIFY_PREV)) {
 			/* block should be latched for consistent
@@ -2070,12 +2073,12 @@ need_opposite_intention:
 			}
 
 			if (height == 0 && leftmost_from_level) {
-				/* should retry to get also prev_page
-				from level==leftmost_from_level. */
-				prev_tree_blocks = true;
+				/* Backtrack to get also prev_page
+				from PAGE_LEVEL==leftmost_from_level. */
+				prev_tree_level = leftmost_from_level;
 
-				auto s = root_savepoint + leftmost_from_level
-					- 1;
+				auto s = root_savepoint + cursor->tree_height
+					- leftmost_from_level - 1;
 				buf_block_t *b = mtr->at_savepoint(s);
 				ut_ad(btr_page_get_level(b->page.frame)
 				      == leftmost_from_level);
