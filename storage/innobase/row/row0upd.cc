@@ -1836,7 +1836,6 @@ row_upd_sec_index_entry(
 	mem_heap_t*		heap;
 	dtuple_t*		entry;
 	dict_index_t*		index;
-	btr_cur_t*		btr_cur;
 	dberr_t			err	= DB_SUCCESS;
 	trx_t*			trx	= thr_get_trx(thr);
 	btr_latch_mode		mode;
@@ -1891,7 +1890,7 @@ row_upd_sec_index_entry(
 
 	/* Set the query thread, so that ibuf_insert_low() will be
 	able to invoke thd_get_trx(). */
-	btr_pcur_get_btr_cur(&pcur)->thr = thr;
+	pcur.btr_cur.thr = thr;
 	pcur.btr_cur.page_cur.index = index;
 
 	if (index->is_spatial()) {
@@ -1910,8 +1909,6 @@ row_upd_sec_index_entry(
 
 	search_result = row_search_index_entry(entry, mode, &pcur, &mtr);
 
-	btr_cur = btr_pcur_get_btr_cur(&pcur);
-
 	switch (search_result) {
 	const rec_t* rec;
 	case ROW_NOT_DELETED_REF:	/* should only occur for BTR_DELETE */
@@ -1923,7 +1920,7 @@ row_upd_sec_index_entry(
 
 	case ROW_NOT_FOUND:
 not_found:
-		rec = btr_cur_get_rec(btr_cur);
+		rec = btr_pcur_get_rec(&pcur);
 		ib::error()
 			<< "Record in index " << index->name
 			<< " of table " << index->table->name
@@ -1939,7 +1936,7 @@ not_found:
 	case ROW_FOUND:
 found:
 		ut_ad(err == DB_SUCCESS);
-		rec = btr_cur_get_rec(btr_cur);
+		rec = btr_pcur_get_rec(&pcur);
 
 		/* Delete mark the old index record; it can already be
 		delete marked if we return after a lock wait in
@@ -1948,14 +1945,14 @@ found:
 			    rec, dict_table_is_comp(index->table))) {
 			err = lock_sec_rec_modify_check_and_lock(
 				flags,
-				btr_cur_get_block(btr_cur),
-				btr_cur_get_rec(btr_cur), index, thr, &mtr);
+				btr_pcur_get_block(&pcur),
+				btr_pcur_get_rec(&pcur), index, thr, &mtr);
 			if (err != DB_SUCCESS) {
 				break;
 			}
 
-			btr_rec_set_deleted<true>(btr_cur_get_block(btr_cur),
-						  btr_cur_get_rec(btr_cur),
+			btr_rec_set_deleted<true>(btr_pcur_get_block(&pcur),
+						  btr_pcur_get_rec(&pcur),
 						  &mtr);
 #ifdef WITH_WSREP
 			if (!referenced && foreign
