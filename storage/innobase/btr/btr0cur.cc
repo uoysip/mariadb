@@ -219,19 +219,25 @@ btr_cur_latch_leaves(
 	static_assert(BTR_SEARCH_LEAF & BTR_SEARCH_TREE, "");
 
 	switch (latch_mode) {
-	default:
-		break;
 		uint32_t	left_page_no;
 		uint32_t	right_page_no;
+	default:
+		break;
 	case BTR_MODIFY_LEAF:
 x_latch_block:
 		mtr->x_latch_at_savepoint(block_savepoint, block);
+#ifdef BTR_CUR_HASH_ADAPT
+		btr_search_drop_page_hash_index(block, true);
+#endif
 		return;
 	case BTR_SEARCH_LEAF:
 	case BTR_SEARCH_TREE:
 s_latch_block:
 		ut_ad(block == mtr->at_savepoint(block_savepoint));
 		block->page.lock.s_lock();
+#ifdef BTR_CUR_HASH_ADAPT
+		btr_search_drop_page_hash_index(block, true);
+#endif
 		mtr->s_lock_register(block_savepoint);
 		return;
 	case BTR_MODIFY_TREE:
@@ -250,7 +256,7 @@ s_latch_block:
 
 		mtr->x_latch_at_savepoint(block_savepoint, block);
 #ifdef BTR_CUR_HASH_ADAPT
-		ut_ad(!btr_search_check_marked_free_index(block));
+		btr_search_drop_page_hash_index(block, true);
 #endif
 
 		right_page_no = btr_page_get_next(block->page.frame);
