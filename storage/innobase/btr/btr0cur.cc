@@ -2038,7 +2038,7 @@ need_opposite_intention:
 		    && !rtree_parent_modified) {
 			ut_ad(upper_rw_latch == RW_X_LATCH);
 			/* release the upper blocks, except the root */
-			mtr->rollback_to_savepoint(savepoint + 1);
+			mtr->rollback_to_savepoint(root_savepoint + 1);
 		}
 
 		if (height == level
@@ -2212,8 +2212,11 @@ need_opposite_intention:
 		cursor->up_bytes = up_bytes;
 
 		if (autoinc) {
-			page_set_autoinc(mtr->at_savepoint(root_savepoint),
-					 autoinc, mtr, false);
+			buf_block_t* root = mtr->at_savepoint(root_savepoint);
+			ut_ad(index->is_primary());
+			ut_ad(index->page
+			      == page_get_page_no(root->page.frame));
+			page_set_autoinc(root, autoinc, mtr, false);
 		}
 
 #ifdef BTR_CUR_HASH_ADAPT
