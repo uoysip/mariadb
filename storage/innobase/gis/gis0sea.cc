@@ -230,6 +230,7 @@ rtr_pcur_getnext_from_path(
 		      || !page_is_leaf(btr_cur_get_page(btr_cur))
 		      || !btr_cur->page_cur.block->page.lock.have_any());
 
+		const auto block_savepoint = mtr->get_savepoint();
 		block = buf_page_get_gen(
 			page_id_t(index->table->space_id,
 				  next_rec.page_no), zip_size,
@@ -370,24 +371,23 @@ rtr_pcur_getnext_from_path(
 
 		if (found) {
 			if (level == target_level) {
-				page_cur_t*	r_cur;;
+				ut_ad(block
+				      == mtr->at_savepoint(block_savepoint));
 
 				if (my_latch_mode == BTR_MODIFY_TREE
 				    && level == 0) {
 					ut_ad(rw_latch == RW_NO_LATCH);
 
 					btr_cur_latch_leaves(
-						block,
+						block_savepoint,
 						BTR_MODIFY_TREE,
 						btr_cur, mtr);
 				}
 
-				r_cur = btr_cur_get_page_cur(btr_cur);
-
 				page_cur_position(
 					page_cur_get_rec(page_cursor),
 					page_cur_get_block(page_cursor),
-					r_cur);
+					btr_cur_get_page_cur(btr_cur));
 
 				btr_cur->low_match = level != 0 ?
 					DICT_INDEX_SPATIAL_NODEPTR_SIZE + 1

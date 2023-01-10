@@ -188,13 +188,13 @@ btr_rec_free_externally_stored_fields(
 /*==================== B-TREE SEARCH =========================*/
 
 /** Latches the leaf page or pages requested.
-@param[in]	block		leaf page where the search converged
+@param[in]	block_savepoint	leaf page where the search converged
 @param[in]	latch_mode	BTR_SEARCH_LEAF, ...
 @param[in]	cursor		cursor
 @param[in]	mtr		mini-transaction */
 void
 btr_cur_latch_leaves(
-	buf_block_t*		block,
+	ulint			block_savepoint,
 	btr_latch_mode		latch_mode,
 	btr_cur_t*		cursor,
 	mtr_t*			mtr)
@@ -202,6 +202,9 @@ btr_cur_latch_leaves(
 	compile_time_assert(int(MTR_MEMO_PAGE_S_FIX) == int(RW_S_LATCH));
 	compile_time_assert(int(MTR_MEMO_PAGE_X_FIX) == int(RW_X_LATCH));
 	compile_time_assert(int(MTR_MEMO_PAGE_SX_FIX) == int(RW_SX_LATCH));
+
+	buf_block_t* block = mtr->at_savepoint(block_savepoint);
+
 	ut_ad(block->page.id().space() == cursor->index()->table->space->id);
 	ut_ad(block->page.in_file());
 	ut_ad(srv_read_only_mode
@@ -220,12 +223,16 @@ btr_cur_latch_leaves(
 		break;
 		uint32_t	left_page_no;
 		uint32_t	right_page_no;
-	case BTR_SEARCH_LEAF:
 	case BTR_MODIFY_LEAF:
+x_latch_block:
+		mtr->x_latch_at_savepoint(block_savepoint, block);
+		return;
+	case BTR_SEARCH_LEAF:
 	case BTR_SEARCH_TREE:
-latch_block:
-		block->page.fix();
-		mtr->page_lock(block, mode);
+s_latch_block:
+		ut_ad(block == mtr->at_savepoint(block_savepoint));
+		block->page.lock.s_lock();
+		mtr->s_lock_register(block_savepoint);
 		return;
 	case BTR_MODIFY_TREE:
 		/* It is exclusive for other operations which calls
@@ -241,10 +248,7 @@ latch_block:
 				      true, mtr);
 		}
 
-		block->page.fix();
-		block->page.lock.x_lock();
-
-		mtr->memo_push(block, MTR_MEMO_PAGE_X_FIX);
+		mtr->x_latch_at_savepoint(block_savepoint, block);
 #ifdef BTR_CUR_HASH_ADAPT
 		ut_ad(!btr_search_check_marked_free_index(block));
 #endif
@@ -276,7 +280,11 @@ latch_block:
 				mode, true, mtr);
 		}
 
-		goto latch_block;
+		if (latch_mode == BTR_MODIFY_PREV) {
+			goto x_latch_block;
+		} else {
+			goto s_latch_block;
+		}
 	case BTR_CONT_MODIFY_TREE:
 		ut_ad(cursor->index()->is_spatial());
 		return;
@@ -1645,11 +1653,21 @@ func_exit:
 	}
 
 	page = buf_block_get_frame(block);
+#ifdef UNIV_ZIP_DEBUG
+	if (rw_latch != RW_NO_LATCH) {
+		const page_zip_des_t*	page_zip
+			= buf_block_get_page_zip(block);
+		ut_a(!page_zip || page_zip_validate(page_zip, page, index));
+	}
+#endif /* UNIV_ZIP_DEBUG */
 
-	if (height == ULINT_UNDEFINED
-	    && page_is_leaf(page)
-	    && rw_latch != RW_NO_LATCH
-	    && rw_latch != root_leaf_rw_latch) {
+	ut_ad(fil_page_index_page_check(page));
+	ut_ad(index->id == btr_page_get_index_id(page));
+
+	if (height != ULINT_UNDEFINED) {
+	} else if (page_is_leaf(page)
+		   && rw_latch != RW_NO_LATCH
+		   && rw_latch != root_leaf_rw_latch) {
 		/* The root page is also a leaf page (root_leaf).
 		We should reacquire the page, because the root page
 		is latched differently from leaf pages. */
@@ -1663,20 +1681,7 @@ func_exit:
 
 		upper_rw_latch = root_leaf_rw_latch;
 		goto search_loop;
-	}
-
-#ifdef UNIV_ZIP_DEBUG
-	if (rw_latch != RW_NO_LATCH) {
-		const page_zip_des_t*	page_zip
-			= buf_block_get_page_zip(block);
-		ut_a(!page_zip || page_zip_validate(page_zip, page, index));
-	}
-#endif /* UNIV_ZIP_DEBUG */
-
-	ut_ad(fil_page_index_page_check(page));
-	ut_ad(index->id == btr_page_get_index_id(page));
-
-	if (height == ULINT_UNDEFINED) {
+	} else {
 		/* We are in the root node */
 
 		height = btr_page_get_level(page);
@@ -1704,7 +1709,9 @@ func_exit:
 
 	if (height == 0) {
 		if (rw_latch == RW_NO_LATCH) {
-			btr_cur_latch_leaves(block, latch_mode, cursor, mtr);
+			ut_ad(block == mtr->at_savepoint(block_savepoint));
+			btr_cur_latch_leaves(block_savepoint, latch_mode,
+					     cursor, mtr);
 		}
 
 		switch (latch_mode) {
@@ -2172,6 +2179,7 @@ need_opposite_intention:
 		guess = NULL;
 
 		if (height == 0) {
+			ut_ad(block == mtr->at_savepoint(block_savepoint));
 			mtr->rollback_to_savepoint(block_savepoint);
 		}
 
@@ -2372,9 +2380,10 @@ dberr_t btr_cur_t::open_leaf(bool first, dict_index_t *index,
       reached_leaf:
         const auto leaf_savepoint= mtr->get_savepoint();
         ut_ad(leaf_savepoint);
+        ut_ad(block == mtr->at_savepoint(leaf_savepoint - 1));
 
         if (rw_latch == RW_NO_LATCH)
-          btr_cur_latch_leaves(block, latch_mode, this, mtr);
+          btr_cur_latch_leaves(leaf_savepoint - 1, latch_mode, this, mtr);
 
         switch (latch_mode) {
         case BTR_MODIFY_TREE:

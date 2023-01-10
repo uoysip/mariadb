@@ -654,7 +654,7 @@ btr_rec_copy_externally_stored_field(
 @param[in,out]	mtr		mini-transaction */
 void
 btr_cur_latch_leaves(
-	buf_block_t*		block,
+	ulint			block_savepoint,
 	btr_latch_mode		latch_mode,
 	btr_cur_t*		cursor,
 	mtr_t*			mtr);
