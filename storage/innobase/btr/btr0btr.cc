@@ -4816,12 +4816,10 @@ btr_validate_level(
 
 	mtr.start();
 
-	if (!srv_read_only_mode) {
-		if (lockout) {
-			mtr_x_lock_index(index, &mtr);
-		} else {
-			mtr_sx_lock_index(index, &mtr);
-		}
+	if (lockout) {
+		mtr_x_lock_index(index, &mtr);
+	} else {
+		mtr_sx_lock_index(index, &mtr);
 	}
 
 	dberr_t err;
@@ -4918,12 +4916,10 @@ func_exit:
 	mem_heap_empty(heap);
 	offsets = offsets2 = NULL;
 
-	if (!srv_read_only_mode) {
-		if (lockout) {
-			mtr_x_lock_index(index, &mtr);
-		} else {
-			mtr_sx_lock_index(index, &mtr);
-		}
+	if (lockout) {
+		mtr_x_lock_index(index, &mtr);
+	} else {
+		mtr_sx_lock_index(index, &mtr);
 	}
 
 	page = block->page.frame;
