@@ -478,27 +478,11 @@ static void rtr_compare_cursor_rec(const rec_t *rec, dict_index_t *index,
 #endif
 
 dberr_t rtr_search_leaf(btr_cur_t *cur, const dtuple_t *tuple,
-                        btr_latch_mode latch_mode, mtr_t *mtr)
-{
-  // TODO: implement this specially
-  return btr_cur_search_to_nth_level(0, tuple, PAGE_CUR_RTREE_LOCATE,
-                                     latch_mode, cur, mtr);
-}
-
-dberr_t rtr_search_leaf(btr_cur_t *cur, const dtuple_t *tuple,
-                        page_cur_mode_t mode, btr_latch_mode latch_mode,
-                        mtr_t *mtr)
+                        btr_latch_mode latch_mode,
+                        mtr_t *mtr, page_cur_mode_t mode)
 {
   // TODO: implement this specially
   return btr_cur_search_to_nth_level(0, tuple, mode, latch_mode, cur, mtr);
-}
-
-dberr_t rtr_insert_leaf(btr_cur_t *cur, const dtuple_t *tuple,
-                        btr_latch_mode latch_mode, mtr_t *mtr)
-{
-  // TODO: implement this specially
-  return btr_cur_search_to_nth_level(0, tuple, PAGE_CUR_RTREE_INSERT,
-                                     latch_mode, cur, mtr);
 }
 
 /**************************************************************//**

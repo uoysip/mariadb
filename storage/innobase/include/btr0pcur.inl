@@ -299,10 +299,6 @@ btr_pcur_init(
 	pcur->btr_cur.rtr_info = NULL;
 }
 
-dberr_t rtr_search_leaf(btr_cur_t *cur, const dtuple_t *tuple,
-                        page_cur_mode_t mode, btr_latch_mode latch_mode,
-                        mtr_t *mtr);
-
 /** Opens an persistent cursor to an index tree without initializing the
 cursor.
 @param tuple      tuple on which search done
@@ -337,7 +333,7 @@ dberr_t btr_pcur_open_with_no_init(const dtuple_t *tuple, page_cur_mode_t mode,
   case PAGE_CUR_WITHIN:
   case PAGE_CUR_DISJOINT:
   case PAGE_CUR_MBR_EQUAL:
-    return rtr_search_leaf(&cursor->btr_cur, tuple, mode, latch_mode, mtr);
+    return rtr_search_leaf(&cursor->btr_cur, tuple, latch_mode, mtr, mode);
   default:
     ut_ad("invalid mode" == 0);
     MY_ASSERT_UNREACHABLE();
