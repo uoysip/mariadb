@@ -109,4 +109,37 @@ select f1, f3, check_row_ts(row_start, row_end) from t1 for system_time all;
 # cleanup
 drop table t1;
 
+--echo #
+--echo # MDEV-30378 Versioned REPLACE succeeds with ON DELETE RESTRICT
+--echo # constraint
+--echo #
+create table t0 (pk integer primary key) with system versioning engine=innodb;
+create table t1 (pk integer primary key references t0(pk)
+                 on delete restrict on update cascade) engine=innodb;
+create table t2 (pk integer);
+
+insert into t0 (pk) values (1);
+insert into t1 (pk) values (1);
+insert into t2 (pk) values (1);
+
+--error ER_ROW_IS_REFERENCED_2
+delete from t0;
+
+--error ER_ROW_IS_REFERENCED_2
+replace t0 values (1);
+
+select * into outfile 'load_t0' from t0 ;
+--error ER_ROW_IS_REFERENCED_2
+load data infile 'load_t0' replace into table t0;
+
+--error ER_ROW_IS_REFERENCED_2
+delete t0, t2 from t0 join t2;
+
+select pk from t0;
+
+--echo # Cleanup
+drop table t1, t0, t2;
+--let $datadir= `select @@datadir`
+--remove_file $datadir/test/load_t0
+
 --source suite/versioning/common_finish.inc
