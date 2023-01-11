@@ -4776,7 +4776,7 @@ wait_table_again:
 		pcur->btr_cur.thr = thr;
 		pcur->old_rec = nullptr;
 
-		if (dict_index_is_spatial(index)) {
+		if (index->is_spatial()) {
 			if (!prebuilt->rtr_info) {
 				prebuilt->rtr_info = rtr_create_rtr_info(
 					set_also_gap_locks, true,
@@ -4792,10 +4792,13 @@ wait_table_again:
 				prebuilt->rtr_info->search_tuple = search_tuple;
 				prebuilt->rtr_info->search_mode = mode;
 			}
-		}
 
-		err = btr_pcur_open_with_no_init(search_tuple, mode,
-						 BTR_SEARCH_LEAF, pcur, &mtr);
+			err = rtr_search_leaf(pcur, search_tuple, mode, &mtr);
+		} else {
+			err = btr_pcur_open_with_no_init(search_tuple, mode,
+							 BTR_SEARCH_LEAF,
+							 pcur, &mtr);
+		}
 
 		if (err != DB_SUCCESS) {
 page_corrupted:

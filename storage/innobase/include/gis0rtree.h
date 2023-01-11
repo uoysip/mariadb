@@ -82,6 +82,15 @@ inline dberr_t rtr_insert_leaf(btr_cur_t *cur, const dtuple_t *tuple,
   return rtr_search_leaf(cur, tuple, latch_mode, mtr, PAGE_CUR_RTREE_INSERT);
 }
 
+/** Search for a spatial index leaf page record.
+@param pcur         cursor
+@param tuple       search tuple
+@param mode        search mode
+@param mtr         mini-transaction */
+dberr_t rtr_search_leaf(btr_pcur_t *pcur, const dtuple_t *tuple,
+                        page_cur_mode_t mode, mtr_t *mtr)
+  MY_ATTRIBUTE((nonnull, warn_unused_result));
+
 /**********************************************************************//**
 Builds a Rtree node pointer out of a physical record and a page number.
 @return own: node pointer */

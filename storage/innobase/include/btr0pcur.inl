@@ -328,12 +328,6 @@ dberr_t btr_pcur_open_with_no_init(const dtuple_t *tuple, page_cur_mode_t mode,
     return cursor->btr_cur.search_leaf<PAGE_CUR_L>(tuple, latch_mode, mtr);
   case PAGE_CUR_G:
     return cursor->btr_cur.search_leaf<PAGE_CUR_G>(tuple, latch_mode, mtr);
-  case PAGE_CUR_CONTAIN:
-  case PAGE_CUR_INTERSECT:
-  case PAGE_CUR_WITHIN:
-  case PAGE_CUR_DISJOINT:
-  case PAGE_CUR_MBR_EQUAL:
-    return rtr_search_leaf(&cursor->btr_cur, tuple, latch_mode, mtr, mode);
   default:
     ut_ad("invalid mode" == 0);
     MY_ASSERT_UNREACHABLE();

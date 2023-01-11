@@ -485,6 +485,33 @@ dberr_t rtr_search_leaf(btr_cur_t *cur, const dtuple_t *tuple,
   return btr_cur_search_to_nth_level(0, tuple, mode, latch_mode, cur, mtr);
 }
 
+/** Search for a spatial index leaf page record.
+@param pcur         cursor
+@param tuple       search tuple
+@param mode        search mode
+@param mtr         mini-transaction */
+dberr_t rtr_search_leaf(btr_pcur_t *pcur, const dtuple_t *tuple,
+                        page_cur_mode_t mode, mtr_t *mtr)
+{
+#ifdef UNIV_DEBUG
+  switch (mode) {
+  case PAGE_CUR_CONTAIN:
+  case PAGE_CUR_INTERSECT:
+  case PAGE_CUR_WITHIN:
+  case PAGE_CUR_DISJOINT:
+  case PAGE_CUR_MBR_EQUAL:
+    break;
+  default:
+    ut_ad("invalid mode" == 0);
+  }
+#endif
+  pcur->latch_mode= BTR_SEARCH_LEAF;
+  pcur->search_mode= mode;
+  pcur->pos_state= BTR_PCUR_IS_POSITIONED;
+  pcur->trx_if_known= nullptr;
+  return rtr_search_leaf(&pcur->btr_cur, tuple, BTR_SEARCH_LEAF, mtr, mode);
+}
+
 /**************************************************************//**
 Initializes and opens a persistent cursor to an index tree. It should be
 closed with btr_pcur_close. */
