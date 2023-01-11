@@ -478,11 +478,10 @@ static void rtr_compare_cursor_rec(const rec_t *rec, dict_index_t *index,
 #endif
 
 TRANSACTIONAL_TARGET
-static dberr_t rtr_search_to_nth_level(ulint level,
-                                       const dtuple_t *tuple,
-                                       page_cur_mode_t mode,
-                                       btr_latch_mode latch_mode,
-                                       btr_cur_t *cur, mtr_t *mtr)
+dberr_t rtr_search_to_nth_level(ulint level, const dtuple_t *tuple,
+                                page_cur_mode_t mode,
+                                btr_latch_mode latch_mode,
+                                btr_cur_t *cur, mtr_t *mtr)
 {
   page_t*		page = NULL; /* remove warning */
   buf_block_t*	block;

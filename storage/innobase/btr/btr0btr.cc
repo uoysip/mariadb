@@ -752,7 +752,7 @@ btr_page_get_father_node_ptr_func(
 					dict_index_build_node_ptr(index,
 								  user_rec, 0,
 								  heap, level),
-					PAGE_CUR_LE, latch_mode,
+					latch_mode,
 					cursor, mtr) != DB_SUCCESS) {
 		return nullptr;
 	}
@@ -2358,24 +2358,29 @@ btr_insert_on_non_leaf_level(
 	rtr_info_t	rtr_info;
 
 	ut_ad(level > 0);
-	auto mode = PAGE_CUR_LE;
-
-	if (index->is_spatial()) {
-		mode = PAGE_CUR_RTREE_INSERT;
-		/* For spatial index, initialize structures to track
-		its parents etc. */
-		rtr_init_rtr_info(&rtr_info, false, &cursor, index, false);
-
-		rtr_info_update_btr(&cursor, &rtr_info);
-	}
 
 	flags |= BTR_NO_LOCKING_FLAG | BTR_KEEP_SYS_FLAG
 		| BTR_NO_UNDO_LOG_FLAG;
 	cursor.page_cur.index = index;
 
-	dberr_t err = btr_cur_search_to_nth_level(level, tuple, mode,
+	dberr_t err;
+
+	if (index->is_spatial()) {
+		/* For spatial index, initialize structures to track
+		its parents etc. */
+		rtr_init_rtr_info(&rtr_info, false, &cursor, index, false);
+
+		rtr_info_update_btr(&cursor, &rtr_info);
+		err = rtr_search_to_nth_level(level, tuple,
+					      PAGE_CUR_RTREE_INSERT,
+					      BTR_CONT_MODIFY_TREE,
+					      &cursor, mtr);
+	} else {
+		err = btr_cur_search_to_nth_level(level, tuple,
 						  BTR_CONT_MODIFY_TREE,
 						  &cursor, mtr);
+	}
+
 	ut_ad(cursor.flag == BTR_CUR_BINARY);
 	ut_ad(!btr_cur_get_block(&cursor)->page.lock.not_recursive()
 	      || index->is_spatial()
@@ -3039,16 +3044,15 @@ insert_empty:
 		buf = NULL;
 	}
 
-	if (!srv_read_only_mode
-	    && insert_will_fit
+#if 0 // FIXME: this used to be a no-op, and may cause trouble if enabled
+	if (insert_will_fit
 	    && page_is_leaf(page)
 	    && !dict_index_is_online_ddl(cursor->index())) {
-#if 0 // FIXME: this used to be a no-op, and may cause trouble if enabled
 		mtr->release(cursor->index()->lock);
-#endif
 		/* NOTE: We cannot release root block latch here, because it
 		has segment header and already modified in most of cases.*/
 	}
+#endif
 
 	/* 5. Move then the records to the new page */
 	if (direction == FSP_DOWN) {

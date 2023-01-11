@@ -91,6 +91,12 @@ dberr_t rtr_search_leaf(btr_pcur_t *pcur, const dtuple_t *tuple,
                         page_cur_mode_t mode, mtr_t *mtr)
   MY_ATTRIBUTE((nonnull, warn_unused_result));
 
+dberr_t rtr_search_to_nth_level(ulint level, const dtuple_t *tuple,
+                                page_cur_mode_t mode,
+                                btr_latch_mode latch_mode,
+                                btr_cur_t *cur, mtr_t *mtr)
+  MY_ATTRIBUTE((nonnull, warn_unused_result));
+
 /**********************************************************************//**
 Builds a Rtree node pointer out of a physical record and a page number.
 @return own: node pointer */

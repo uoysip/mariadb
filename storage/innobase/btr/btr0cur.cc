@@ -103,14 +103,14 @@ throughput clearly from about 100000. */
 #define BTR_CUR_FINE_HISTORY_LENGTH	100000
 
 #ifdef BTR_CUR_HASH_ADAPT
-/** Number of searches down the B-tree in btr_cur_search_to_nth_level(). */
+/** Number of searches down the B-tree in btr_cur_t::search_leaf(). */
 ib_counter_t<ulint, ib_counter_element_t>	btr_cur_n_non_sea;
 /** Old value of btr_cur_n_non_sea.  Copied by
 srv_refresh_innodb_monitor_stats().  Referenced by
 srv_printf_innodb_monitor(). */
 ulint	btr_cur_n_non_sea_old;
 /** Number of successful adaptive hash index lookups in
-btr_cur_search_to_nth_level(). */
+btr_cur_t::search_leaf(). */
 ib_counter_t<ulint, ib_counter_element_t>	btr_cur_n_sea;
 /** Old value of btr_cur_n_sea.  Copied by
 srv_refresh_innodb_monitor_stats().  Referenced by
@@ -1834,25 +1834,17 @@ dberr_t btr_cur_t::search_leaf<PAGE_CUR_LE>(const dtuple_t *, btr_latch_mode,
                                             mtr_t *, uint64_t);
 
 /********************************************************************//**
-Searches an index tree and positions a tree cursor on a given level.
+Searches an index tree and positions a tree cursor on a given non-leaf level.
 NOTE: n_fields_cmp in tuple must be set so that it cannot be compared
 to node pointer page number fields on the upper levels of the tree!
-Note that if mode is PAGE_CUR_LE, which is used in inserts, then
 cursor->up_match and cursor->low_match both will have sensible values.
-If mode is PAGE_CUR_GE, then up_match will a have a sensible value.
-
-If mode is PAGE_CUR_LE , cursor is left at the place where an insert of the
+Cursor is left at the place where an insert of the
 search tuple should be performed in the B-tree. InnoDB does an insert
 immediately after the cursor. Thus, the cursor may end up on a user record,
 or on a page infimum record.
 @param level      the tree level of search
 @param tuple      data tuple; NOTE: n_fields_cmp in tuple must be set so that
                   it cannot get compared to the node ptr page number field!
-@param mode       PAGE_CUR_L, ...; NOTE that if the search is made using a
-                  unique prefix of a record, mode should be PAGE_CUR_LE, not
-                  PAGE_CUR_GE, as the latter may end up on the previous page of
-                  the record! Inserts should always be made using PAGE_CUR_LE
-                  to search the position!
 @param latch_mode BTR_SEARCH_LEAF, ..., ORed with at most one of BTR_INSERT,
                   BTR_DELETE_MARK, or BTR_DELETE;
                   cursor->left_block is used to store a pointer to the left
@@ -1860,15 +1852,12 @@ or on a page infimum record.
 @param cursor     tree cursor; the cursor page is s- or x-latched, but see also
                   above!
 @param mtr        mini-transaction
-@param autoinc    PAGE_ROOT_AUTO_INC to be written (0 if none)
 @return DB_SUCCESS on success or error code otherwise */
 TRANSACTIONAL_TARGET
 dberr_t btr_cur_search_to_nth_level(ulint level,
                                     const dtuple_t *tuple,
-                                    page_cur_mode_t mode,
                                     btr_latch_mode latch_mode,
-                                    btr_cur_t *cursor, mtr_t *mtr,
-                                    ib_uint64_t autoinc)
+                                    btr_cur_t *cursor, mtr_t *mtr)
 {
 	page_t*		page = NULL; /* remove warning */
 	buf_block_t*	block;
@@ -1879,7 +1868,6 @@ dberr_t btr_cur_search_to_nth_level(ulint level,
 	ulint		low_match;
 	ulint		low_bytes;
 	ulint		rw_latch;
-	page_cur_mode_t	page_mode;
 	ulint		buf_mode;
 	ulint		node_ptr_max_size = srv_page_size / 2;
 	page_cur_t*	page_cursor;
@@ -1905,9 +1893,7 @@ dberr_t btr_cur_search_to_nth_level(ulint level,
 	rec_offs*	offsets2	= offsets2_;
 	rec_offs_init(offsets_);
 	rec_offs_init(offsets2_);
-	/* Currently, PAGE_CUR_LE is the only search mode used for searches
-	ending to upper levels */
-	ut_ad(level == 0 || mode == PAGE_CUR_LE);
+	ut_ad(level);
 	ut_ad(dict_index_check_search_tuple(index, tuple));
 	ut_ad(!dict_index_is_ibuf(index) || ibuf_inside(mtr));
 	ut_ad(dtuple_check_typed(tuple));
@@ -1967,12 +1953,6 @@ dberr_t btr_cur_search_to_nth_level(ulint level,
 	      || latch_mode == BTR_SEARCH_TREE
 	      || latch_mode == BTR_MODIFY_LEAF);
 
-	ut_ad(autoinc == 0 || dict_index_is_clust(index));
-	ut_ad(autoinc == 0
-	      || latch_mode == BTR_MODIFY_TREE
-	      || latch_mode == BTR_MODIFY_LEAF);
-	ut_ad(autoinc == 0 || level == 0);
-
 	cursor->flag = BTR_CUR_BINARY;
 
 #ifndef BTR_CUR_ADAPT
@@ -1980,49 +1960,10 @@ dberr_t btr_cur_search_to_nth_level(ulint level,
 #else
 	info = btr_search_get_info(index);
 	guess = info->root_guess;
-
-#ifdef BTR_CUR_HASH_ADAPT
-
-# ifdef UNIV_SEARCH_PERF_STAT
-	info->n_searches++;
-# endif
-	/* We do a dirty read of btr_search_enabled below,
-	and btr_search_guess_on_hash() will have to check it again. */
-	if (!btr_search_enabled) {
-	} else if (autoinc == 0
-	    && latch_mode <= BTR_MODIFY_LEAF
-# ifdef PAGE_CUR_LE_OR_EXTENDS
-	    && mode != PAGE_CUR_LE_OR_EXTENDS
-# endif /* PAGE_CUR_LE_OR_EXTENDS */
-	    && info->last_hash_succ
-	    && !(tuple->info_bits & REC_INFO_MIN_REC_FLAG)
-	    && !index->table->is_temporary()
-	    && btr_search_guess_on_hash(index, info, tuple, mode,
-					latch_mode, cursor, mtr)) {
-
-		/* Search using the hash index succeeded */
-
-		ut_ad(cursor->up_match != ULINT_UNDEFINED
-		      || mode != PAGE_CUR_GE);
-		ut_ad(cursor->up_match != ULINT_UNDEFINED
-		      || mode != PAGE_CUR_LE);
-		ut_ad(cursor->low_match != ULINT_UNDEFINED
-		      || mode != PAGE_CUR_LE);
-		++btr_cur_n_sea;
-
-		DBUG_RETURN(DB_SUCCESS);
-	} else {
-		++btr_cur_n_non_sea;
-	}
-# endif /* BTR_CUR_HASH_ADAPT */
 #endif /* BTR_CUR_ADAPT */
-
-	/* If the hash search did not succeed, do binary search down the
-	tree */
 
 	/* Store the position of the tree latch we push to mtr so that we
 	know how to release it when we have latched leaf node(s) */
-
 	const ulint savepoint = mtr->get_savepoint();
 
 	rw_lock_type_t upper_rw_latch;
@@ -2087,28 +2028,6 @@ dberr_t btr_cur_search_to_nth_level(ulint level,
 
 	height = ULINT_UNDEFINED;
 
-	/* We use these modified search modes on non-leaf levels of the
-	B-tree. These let us end up in the right B-tree leaf. In that leaf
-	we use the original search mode. */
-
-	switch (mode) {
-	case PAGE_CUR_GE:
-		page_mode = PAGE_CUR_L;
-		break;
-	case PAGE_CUR_G:
-		page_mode = PAGE_CUR_LE;
-		break;
-	default:
-#ifdef PAGE_CUR_LE_OR_EXTENDS
-		ut_ad(mode == PAGE_CUR_L || mode == PAGE_CUR_LE
-		      || mode == PAGE_CUR_LE_OR_EXTENDS);
-#else /* PAGE_CUR_LE_OR_EXTENDS */
-		ut_ad(mode == PAGE_CUR_L || mode == PAGE_CUR_LE);
-#endif /* PAGE_CUR_LE_OR_EXTENDS */
-		page_mode = mode;
-		break;
-	}
-
 search_loop:
 	buf_mode = BUF_GET;
 	rw_latch = RW_NO_LATCH;
@@ -2117,17 +2036,7 @@ search_loop:
 		/* We are about to fetch the root or a non-leaf page. */
 		if ((latch_mode != BTR_MODIFY_TREE || height == level)
 		    && !prev_tree_level) {
-			/* If doesn't have SX or X latch of index,
-			each pages should be latched before reading. */
-			if (height == ULINT_UNDEFINED
-			    && upper_rw_latch == RW_S_LATCH
-			    && autoinc) {
-				/* needs sx-latch of root page
-				for writing PAGE_ROOT_AUTO_INC */
-				rw_latch = RW_SX_LATCH;
-			} else {
-				rw_latch = upper_rw_latch;
-			}
+			rw_latch = upper_rw_latch;
 		}
 	} else if (latch_mode <= BTR_MODIFY_LEAF) {
 		rw_latch = latch_mode;
@@ -2291,9 +2200,7 @@ func_exit:
 		We should reacquire the page, because the root page
 		is latched differently from leaf pages. */
 		ut_ad(root_leaf_rw_latch != RW_NO_LATCH);
-		ut_ad(rw_latch == RW_S_LATCH || rw_latch == RW_SX_LATCH);
-		ut_ad(rw_latch == RW_S_LATCH || autoinc);
-		ut_ad(!autoinc || root_leaf_rw_latch == RW_X_LATCH);
+		ut_ad(rw_latch == RW_S_LATCH);
 
 		ut_ad(block == mtr->at_savepoint(block_savepoint));
 		mtr->rollback_to_savepoint(block_savepoint);
@@ -2324,7 +2231,6 @@ func_exit:
 		case BTR_CONT_SEARCH_TREE:
 			break;
 		default:
-			ut_ad(!prev_tree_level || !autoinc);
 			if (!latch_by_caller) {
 				/* Release the tree s-latch */
 				mtr->rollback_to_savepoint(savepoint,
@@ -2333,13 +2239,11 @@ func_exit:
 				root_savepoint--;
 			}
 			/* release upper blocks */
-			auto s = savepoint + !!autoinc;
+			auto s = savepoint;
 			if (s < block_savepoint) {
 				mtr->rollback_to_savepoint(s, block_savepoint);
 			}
 		}
-
-		page_mode = mode;
 	}
 
 	page_cursor->block = block;
@@ -2354,7 +2258,7 @@ func_exit:
 		We only need the byte prefix comparison for the purpose
 		of updating the adaptive hash index. */
 		if (page_cur_search_with_match_bytes(
-			tuple, page_mode, &up_match, &up_bytes,
+			tuple, PAGE_CUR_LE, &up_match, &up_bytes,
 			&low_match, &low_bytes, page_cursor)) {
 			err = DB_CORRUPTION;
 			goto func_exit;
@@ -2364,7 +2268,7 @@ func_exit:
 		/* Search for complete index fields. */
 		up_bytes = low_bytes = 0;
 		if (page_cur_search_with_match(
-			tuple, page_mode, &up_match,
+			tuple, PAGE_CUR_LE, &up_match,
 			&low_match, page_cursor, nullptr)) {
 			err = DB_CORRUPTION;
 			goto func_exit;
@@ -2538,7 +2442,7 @@ need_opposite_intention:
 						= mtr->at_savepoint(i);
 					if (page_cur_search_with_match(
 						tuple,
-						page_mode, &up_match,
+						PAGE_CUR_LE, &up_match,
 						&low_match, page_cursor,
 						nullptr)) {
 						err = DB_CORRUPTION;
@@ -2584,75 +2488,26 @@ need_opposite_intention:
 		goto need_opposite_intention;
 	}
 
-	if (level != 0) {
-		ut_ad(!autoinc);
-
-		if (upper_rw_latch == RW_NO_LATCH) {
-			ut_ad(latch_mode == BTR_CONT_MODIFY_TREE
-			      || latch_mode == BTR_CONT_SEARCH_TREE);
-			btr_block_get(
-				*index, page_id.page_no(),
-				latch_mode == BTR_CONT_MODIFY_TREE
-				? RW_X_LATCH : RW_SX_LATCH, false, mtr, &err);
-		} else {
-			ut_ad(mtr->memo_contains_flagged(block,
-							 upper_rw_latch));
-
-			if (latch_by_caller) {
-				ut_ad(latch_mode == BTR_SEARCH_TREE);
-				mtr->rollback_to_savepoint(savepoint + 1,
-							   mtr->get_savepoint() - 1);
-				ut_ad(mtr->memo_contains(index->lock,
-							 MTR_MEMO_SX_LOCK));
-			}
-		}
-
-		if (page_mode <= PAGE_CUR_LE) {
-			cursor->low_match = low_match;
-			cursor->up_match = up_match;
-		}
+	if (upper_rw_latch == RW_NO_LATCH) {
+		ut_ad(latch_mode == BTR_CONT_MODIFY_TREE
+		      || latch_mode == BTR_CONT_SEARCH_TREE);
+		btr_block_get(*index, page_id.page_no(),
+			      latch_mode == BTR_CONT_MODIFY_TREE
+			      ? RW_X_LATCH : RW_SX_LATCH, false, mtr, &err);
 	} else {
-		cursor->low_match = low_match;
-		cursor->low_bytes = low_bytes;
-		cursor->up_match = up_match;
-		cursor->up_bytes = up_bytes;
+		ut_ad(mtr->memo_contains_flagged(block, upper_rw_latch));
 
-		if (autoinc) {
-			buf_block_t* root = mtr->at_savepoint(root_savepoint);
-			ut_ad(index->is_primary());
-			ut_ad(index->page
-			      == page_get_page_no(root->page.frame));
-			page_set_autoinc(root, autoinc, mtr, false);
+		if (latch_by_caller) {
+			ut_ad(latch_mode == BTR_SEARCH_TREE);
+			mtr->rollback_to_savepoint(savepoint + 1,
+						   mtr->get_savepoint() - 1);
+			ut_ad(mtr->memo_contains(index->lock,
+						 MTR_MEMO_SX_LOCK));
 		}
-
-#ifdef BTR_CUR_HASH_ADAPT
-		/* We do a dirty read of btr_search_enabled here.  We
-		will properly check btr_search_enabled again in
-		btr_search_build_page_hash_index() before building a
-		page hash index, while holding search latch. */
-		if (!btr_search_enabled) {
-		} else if (tuple->info_bits & REC_INFO_MIN_REC_FLAG) {
-			/* This may be a search tuple for
-			btr_pcur_t::restore_position(). */
-			ut_ad(tuple->is_metadata()
-			      || (tuple->is_metadata(tuple->info_bits
-						     ^ REC_STATUS_INSTANT)));
-		} else if (index->table->is_temporary()) {
-		} else if (rec_is_metadata(btr_cur_get_rec(cursor), *index)) {
-			/* Only user records belong in the adaptive
-			hash index. */
-		} else {
-			btr_search_info_update(index, cursor);
-		}
-#endif /* BTR_CUR_HASH_ADAPT */
-		ut_ad(cursor->up_match != ULINT_UNDEFINED
-		      || mode != PAGE_CUR_GE);
-		ut_ad(cursor->up_match != ULINT_UNDEFINED
-		      || mode != PAGE_CUR_LE);
-		ut_ad(cursor->low_match != ULINT_UNDEFINED
-		      || mode != PAGE_CUR_LE);
 	}
 
+	cursor->low_match = low_match;
+	cursor->up_match = up_match;
 	goto func_exit;
 }
 

@@ -136,20 +136,18 @@ btr_cur_optimistic_latch_leaves(
 	mtr_t*		mtr);
 
 MY_ATTRIBUTE((warn_unused_result))
-/** Searches an index tree and positions a tree cursor on a given level.
+/********************************************************************//**
+Searches an index tree and positions a tree cursor on a given non-leaf level.
 NOTE: n_fields_cmp in tuple must be set so that it cannot be compared
 to node pointer page number fields on the upper levels of the tree!
-Note that if mode is PAGE_CUR_LE, which is used in inserts, then
 cursor->up_match and cursor->low_match both will have sensible values.
-If mode is PAGE_CUR_GE, then up_match will a have a sensible value.
+Cursor is left at the place where an insert of the
+search tuple should be performed in the B-tree. InnoDB does an insert
+immediately after the cursor. Thus, the cursor may end up on a user record,
+or on a page infimum record.
 @param level      the tree level of search
 @param tuple      data tuple; NOTE: n_fields_cmp in tuple must be set so that
                   it cannot get compared to the node ptr page number field!
-@param mode       PAGE_CUR_L, ...; NOTE that if the search is made using a
-                  unique prefix of a record, mode should be PAGE_CUR_LE, not
-                  PAGE_CUR_GE, as the latter may end up on the previous page of
-                  the record! Inserts should always be made using PAGE_CUR_LE
-                  to search the position!
 @param latch_mode BTR_SEARCH_LEAF, ..., ORed with at most one of BTR_INSERT,
                   BTR_DELETE_MARK, or BTR_DELETE;
                   cursor->left_block is used to store a pointer to the left
@@ -157,14 +155,11 @@ If mode is PAGE_CUR_GE, then up_match will a have a sensible value.
 @param cursor     tree cursor; the cursor page is s- or x-latched, but see also
                   above!
 @param mtr        mini-transaction
-@param autoinc    PAGE_ROOT_AUTO_INC to be written (0 if none)
 @return DB_SUCCESS on success or error code otherwise */
 dberr_t btr_cur_search_to_nth_level(ulint level,
                                     const dtuple_t *tuple,
-                                    page_cur_mode_t mode,
                                     btr_latch_mode latch_mode,
-                                    btr_cur_t *cursor, mtr_t *mtr,
-                                    ib_uint64_t autoinc= 0);
+                                    btr_cur_t *cursor, mtr_t *mtr);
 
 /*************************************************************//**
 Tries to perform an insert to a page in an index tree, next to cursor.
@@ -865,14 +860,14 @@ inherited external field. */
 #define BTR_EXTERN_INHERITED_FLAG	64U
 
 #ifdef BTR_CUR_HASH_ADAPT
-/** Number of searches down the B-tree in btr_cur_search_to_nth_level(). */
+/** Number of searches down the B-tree in btr_cur_t::search_leaf(). */
 extern ib_counter_t<ulint, ib_counter_element_t>	btr_cur_n_non_sea;
 /** Old value of btr_cur_n_non_sea.  Copied by
 srv_refresh_innodb_monitor_stats().  Referenced by
 srv_printf_innodb_monitor(). */
 extern ulint	btr_cur_n_non_sea_old;
 /** Number of successful adaptive hash index lookups in
-btr_cur_search_to_nth_level(). */
+btr_cur_t::search_leaf(). */
 extern ib_counter_t<ulint, ib_counter_element_t>	btr_cur_n_sea;
 /** Old value of btr_cur_n_sea.  Copied by
 srv_refresh_innodb_monitor_stats().  Referenced by
