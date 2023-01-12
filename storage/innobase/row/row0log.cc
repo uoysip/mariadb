@@ -1697,7 +1697,7 @@ err_exit:
 		index->set_modified(*mtr);
 		pcur->btr_cur.page_cur.index = index;
 		error = btr_pcur_open(entry, PAGE_CUR_LE, BTR_PURGE_TREE, pcur,
-				      0, mtr);
+				      mtr);
 		if (error) {
 			goto err_exit;
 		}
@@ -1781,7 +1781,7 @@ row_log_table_apply_delete(
 	mtr_start(&mtr);
 	index->set_modified(mtr);
 	dberr_t err = btr_pcur_open(old_pk, PAGE_CUR_LE, BTR_PURGE_TREE, &pcur,
-				    0, &mtr);
+				    &mtr);
 	if (err != DB_SUCCESS) {
 		goto all_done;
 	}
@@ -1917,7 +1917,7 @@ row_log_table_apply_update(
 
 	mtr.start();
 	index->set_modified(mtr);
-	error = btr_pcur_open(old_pk, PAGE_CUR_LE, BTR_MODIFY_TREE, &pcur, 0,
+	error = btr_pcur_open(old_pk, PAGE_CUR_LE, BTR_MODIFY_TREE, &pcur,
 			      &mtr);
 	if (error != DB_SUCCESS) {
 func_exit:

@@ -390,8 +390,7 @@ struct btr_pcur_t
     pos_state= BTR_PCUR_IS_POSITIONED;
     old_rec= nullptr;
 
-    return btr_cur.open_leaf(first, index,
-                             BTR_LATCH_MODE_WITHOUT_FLAGS(latch_mode), mtr);
+    return btr_cur.open_leaf(first, index, this->latch_mode, mtr);
   }
 };
 
@@ -423,16 +422,13 @@ btr_pcur_open(
         page_cur_mode_t	mode,	/*!< in: PAGE_CUR_LE, ... */
 	btr_latch_mode	latch_mode,/*!< in: BTR_SEARCH_LEAF, ... */
 	btr_pcur_t*	cursor, /*!< in: memory buffer for persistent cursor */
-	ib_uint64_t	autoinc,/*!< in: PAGE_ROOT_AUTO_INC to be written
-				(0 if none) */
 	mtr_t*		mtr)	/*!< in: mtr */
 {
-  ut_ad(!cursor->index()->is_spatial());
   cursor->latch_mode= BTR_LATCH_MODE_WITHOUT_FLAGS(latch_mode);
   cursor->search_mode= mode;
   cursor->pos_state= BTR_PCUR_IS_POSITIONED;
   cursor->trx_if_known= nullptr;
-  return cursor->btr_cur.search_leaf(tuple, mode, latch_mode, mtr, autoinc);
+  return cursor->btr_cur.search_leaf(tuple, mode, latch_mode, mtr);
 }
 
 /** Open a cursor on the first user record satisfying the search condition;
@@ -450,7 +446,7 @@ btr_pcur_open_on_user_rec(
 {
   ut_ad(latch_mode == BTR_SEARCH_LEAF || latch_mode == BTR_MODIFY_LEAF);
   if (dberr_t err=
-      btr_pcur_open(tuple, PAGE_CUR_GE, latch_mode, cursor, 0, mtr))
+      btr_pcur_open(tuple, PAGE_CUR_GE, latch_mode, cursor, mtr))
     return err;
   if (!btr_pcur_is_after_last_on_page(cursor) ||
       btr_pcur_is_after_last_in_tree(cursor))

@@ -494,7 +494,7 @@ dberr_t rtr_search_to_nth_level(ulint level, const dtuple_t *tuple,
   page_cur_mode_t	search_mode = PAGE_CUR_UNSUPP;
 
   ulint		leftmost_from_level = 0;
-  ulint		prev_tree_level = 0;
+  ulint		prev_level = 0;
   bool		mbr_adj = false;
   bool		found = false;
   dict_index_t * const index = cur->index();
@@ -622,7 +622,7 @@ dberr_t rtr_search_to_nth_level(ulint level, const dtuple_t *tuple,
   {
     /* We are about to fetch the root or a non-leaf page. */
     if ((latch_mode != BTR_MODIFY_TREE || height == level) &&
-        !prev_tree_level) {
+        !prev_level) {
       /* If doesn't have SX or X latch of index,
          each page should be latched before reading. */
       rw_latch= upper_rw_latch;
@@ -651,7 +651,7 @@ dberr_t rtr_search_to_nth_level(ulint level, const dtuple_t *tuple,
     return err;
   }
 
-  if (height && prev_tree_level)
+  if (height && prev_level)
   {
     /* also latch left sibling */
     ut_ad(rw_latch == RW_NO_LATCH);
@@ -922,7 +922,7 @@ dberr_t rtr_search_to_nth_level(ulint level, const dtuple_t *tuple,
     /* We should consider prev_page of parent page, if the node_ptr is
     the leftmost of the page. because BTR_SEARCH_PREV and
     BTR_MODIFY_PREV latches prev_page of the leaf page. */
-    if (!prev_tree_level &&
+    if (!prev_level &&
         (latch_mode == BTR_SEARCH_PREV || latch_mode == BTR_MODIFY_PREV))
     {
       /* block should be latched for consistent
@@ -935,9 +935,8 @@ dberr_t rtr_search_to_nth_level(ulint level, const dtuple_t *tuple,
           leftmost_from_level = height + 1;
 
         if (leftmost_from_level && height == 0) {
-          /* Backtrack to get also prev_page from
-          PAGE_LEVEL==leftmost_from_level. */
-          prev_tree_level= leftmost_from_level;
+          /* Backtrack to leftmost_from_level. */
+          prev_level= leftmost_from_level;
           auto s= root_savepoint + cur->tree_height - leftmost_from_level - 1;
           buf_block_t *b= mtr->at_savepoint(s);
           ut_ad(btr_page_get_level(b->page.frame) == leftmost_from_level);

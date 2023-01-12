@@ -1,7 +1,7 @@
 /*****************************************************************************
 
 Copyright (c) 1996, 2015, Oracle and/or its affiliates. All Rights Reserved.
-Copyright (c) 2018, 2022, MariaDB Corporation.
+Copyright (c) 2018, 2023, MariaDB Corporation.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -61,6 +61,8 @@ enum btr_latch_mode {
 	BTR_SEARCH_LEAF = RW_S_LATCH,
 	/** (Prepare to) modify a record on a leaf page and X-latch it. */
 	BTR_MODIFY_LEAF	= RW_X_LATCH,
+	/** U-latch root and X-latch a leaf page */
+	BTR_MODIFY_ROOT_AND_LEAF = RW_SX_LATCH,
 	/** Obtain no latches. */
 	BTR_NO_LATCHES = RW_NO_LATCH,
 	/** Search the previous record. */
@@ -69,7 +71,7 @@ enum btr_latch_mode {
 	BTR_MODIFY_PREV = 4 | BTR_MODIFY_LEAF,
 	/** Start searching the entire B-tree. */
 	BTR_SEARCH_TREE = 8 | BTR_SEARCH_LEAF,
-	/** Start modifying1 the entire B-tree. */
+	/** Start modifying the entire B-tree. */
 	BTR_MODIFY_TREE = 8 | BTR_MODIFY_LEAF,
 	/** Continue searching the entire B-tree. */
 	BTR_CONT_SEARCH_TREE = 4 | BTR_SEARCH_TREE,
@@ -105,6 +107,10 @@ enum btr_latch_mode {
 	/** Search and X-latch a leaf page, assuming that the
 	dict_index_t::lock is being held in non-exclusive mode. */
 	BTR_MODIFY_LEAF_ALREADY_LATCHED = BTR_MODIFY_LEAF
+	| BTR_ALREADY_S_LATCHED,
+	/** U-latch root and X-latch a leaf page, assuming that
+	dict_index_t::lock is being held in U mode. */
+	BTR_MODIFY_ROOT_AND_LEAF_ALREADY_LATCHED = BTR_MODIFY_ROOT_AND_LEAF
 	| BTR_ALREADY_S_LATCHED,
 
 	/** Attempt to delete-mark a secondary index record. */
