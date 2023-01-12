@@ -148,10 +148,7 @@ or on a page infimum record.
 @param level      the tree level of search
 @param tuple      data tuple; NOTE: n_fields_cmp in tuple must be set so that
                   it cannot get compared to the node ptr page number field!
-@param latch_mode BTR_SEARCH_LEAF, ..., ORed with at most one of BTR_INSERT,
-                  BTR_DELETE_MARK, or BTR_DELETE;
-                  cursor->left_block is used to store a pointer to the left
-                  neighbor page
+@param latch_mode BTR_SEARCH_LEAF, ...
 @param cursor     tree cursor; the cursor page is s- or x-latched, but see also
                   above!
 @param mtr        mini-transaction
