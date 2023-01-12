@@ -319,20 +319,7 @@ dberr_t btr_pcur_open_with_no_init(const dtuple_t *tuple, page_cur_mode_t mode,
   cursor->search_mode= mode;
   cursor->pos_state= BTR_PCUR_IS_POSITIONED;
   cursor->trx_if_known= nullptr;
-  switch (mode) {
-  case PAGE_CUR_GE:
-    return cursor->btr_cur.search_leaf<PAGE_CUR_GE>(tuple, latch_mode, mtr);
-  case PAGE_CUR_LE:
-    return cursor->btr_cur.search_leaf<PAGE_CUR_LE>(tuple, latch_mode, mtr);
-  case PAGE_CUR_L:
-    return cursor->btr_cur.search_leaf<PAGE_CUR_L>(tuple, latch_mode, mtr);
-  case PAGE_CUR_G:
-    return cursor->btr_cur.search_leaf<PAGE_CUR_G>(tuple, latch_mode, mtr);
-  default:
-    ut_ad("invalid mode" == 0);
-    MY_ASSERT_UNREACHABLE();
-    return DB_CORRUPTION;
-  }
+  return cursor->btr_cur.search_leaf(tuple, mode, latch_mode, mtr);
 }
 
 /**************************************************************//**

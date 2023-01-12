@@ -1147,13 +1147,10 @@ static ulint btr_node_ptr_max_size(const dict_index_t* index)
 	return rec_max_size;
 }
 
-template<page_cur_mode_t mode>
-dberr_t btr_cur_t::search_leaf(const dtuple_t *tuple,
+dberr_t btr_cur_t::search_leaf(const dtuple_t *tuple, page_cur_mode_t mode,
                                btr_latch_mode latch_mode, mtr_t *mtr,
                                uint64_t autoinc)
 {
-  static_assert(mode == PAGE_CUR_G || mode == PAGE_CUR_GE ||
-                mode == PAGE_CUR_L || mode == PAGE_CUR_LE, "");
   ut_ad(index()->is_btree() || index()->is_ibuf());
   ut_ad(!index()->is_ibuf() || ibuf_inside(mtr));
 
@@ -1162,7 +1159,6 @@ dberr_t btr_cur_t::search_leaf(const dtuple_t *tuple,
   buf_block_t*	guess;
   ulint		height;
   ulint		rw_latch;
-  page_cur_mode_t	page_mode;
   ulint		buf_mode;
   ulint		node_ptr_max_size = srv_page_size / 2;
   btr_op_t	btr_op;
@@ -1173,9 +1169,6 @@ dberr_t btr_cur_t::search_leaf(const dtuple_t *tuple,
   ulint		leftmost_from_level = 0;
   ulint		prev_tree_level = 0;
 
-#ifdef BTR_CUR_ADAPT
-  btr_search_t*	info;
-#endif /* BTR_CUR_ADAPT */
   mem_heap_t*	heap		= NULL;
   rec_offs	offsets_[REC_OFFS_NORMAL_SIZE];
   rec_offs*	offsets		= offsets_;
@@ -1249,14 +1242,13 @@ dberr_t btr_cur_t::search_leaf(const dtuple_t *tuple,
 #ifndef BTR_CUR_ADAPT
   guess= nullptr;
 #else
-  info= btr_search_get_info(index());
+  btr_search_t *info= btr_search_get_info(index());
   guess= info->root_guess;
 
-#ifdef BTR_CUR_HASH_ADAPT
-
-# ifdef UNIV_SEARCH_PERF_STAT
+# ifdef BTR_CUR_HASH_ADAPT
+#  ifdef UNIV_SEARCH_PERF_STAT
   info->n_searches++;
-# endif
+#  endif
   /* We do a dirty read of btr_search_enabled below,
      and btr_search_guess_on_hash() will have to check it again. */
   if (!btr_search_enabled);
@@ -1277,8 +1269,8 @@ dberr_t btr_cur_t::search_leaf(const dtuple_t *tuple,
   }
   else
     ++btr_cur_n_non_sea;
-# endif /* BTR_CUR_HASH_ADAPT */
-#endif /* BTR_CUR_ADAPT */
+# endif
+#endif
 
   /* If the hash search did not succeed, do binary search down the
      tree */
@@ -1346,17 +1338,15 @@ dberr_t btr_cur_t::search_leaf(const dtuple_t *tuple,
   /* We use these modified search modes on non-leaf levels of the
      B-tree. These let us end up in the right B-tree leaf. In that leaf
      we use the original search mode. */
-
-  switch (mode) {
-  case PAGE_CUR_GE:
+  auto page_mode= mode;
+  if (mode > PAGE_CUR_GE)
+    ut_ad(mode == PAGE_CUR_L || mode == PAGE_CUR_LE);
+  else if (mode == PAGE_CUR_GE)
     page_mode= PAGE_CUR_L;
-    break;
-  case PAGE_CUR_G:
+  else
+  {
+    ut_ad(mode == PAGE_CUR_G);
     page_mode= PAGE_CUR_LE;
-    break;
-  default:
-    page_mode= mode;
-    break;
   }
 
  search_loop:
@@ -1545,6 +1535,8 @@ dberr_t btr_cur_t::search_leaf(const dtuple_t *tuple,
 #endif
   }
 
+  page_cur.block = block;
+
   if (height == 0)
   {
     if (rw_latch == RW_NO_LATCH)
@@ -1577,8 +1569,6 @@ dberr_t btr_cur_t::search_leaf(const dtuple_t *tuple,
     page_mode= mode;
   }
 
-  page_cur.block = block;
-
 #ifdef BTR_CUR_HASH_ADAPT
   if (height == 0 && btr_search_enabled &&
       !(tuple->info_bits & REC_INFO_MIN_REC_FLAG)) {
@@ -1586,7 +1576,7 @@ dberr_t btr_cur_t::search_leaf(const dtuple_t *tuple,
     (height==0).
     We only need the byte prefix comparison for the purpose
     of updating the adaptive hash index. */
-    if (page_cur_search_with_match_bytes(tuple, page_mode,
+    if (page_cur_search_with_match_bytes(tuple, mode,
                                          &up_match, &up_bytes,
                                          &low_match, &low_bytes, &page_cur))
     {
@@ -1747,7 +1737,7 @@ dberr_t btr_cur_t::search_leaf(const dtuple_t *tuple,
           for (auto i = root_savepoint; i < s; i++)
           {
             page_cur.block= mtr->at_savepoint(i);
-            if (page_cur_search_with_match(tuple, page_mode, &up_match,
+            if (page_cur_search_with_match(tuple, mode, &up_match,
                                            &low_match, &page_cur, nullptr))
             {
               err= DB_CORRUPTION;
@@ -1819,19 +1809,6 @@ dberr_t btr_cur_t::search_leaf(const dtuple_t *tuple,
 
   goto func_exit;
 }
-
-template
-dberr_t btr_cur_t::search_leaf<PAGE_CUR_G>(const dtuple_t *, btr_latch_mode,
-                                           mtr_t *, uint64_t);
-template
-dberr_t btr_cur_t::search_leaf<PAGE_CUR_GE>(const dtuple_t *, btr_latch_mode,
-                                            mtr_t *, uint64_t);
-template
-dberr_t btr_cur_t::search_leaf<PAGE_CUR_L>(const dtuple_t *, btr_latch_mode,
-                                           mtr_t *, uint64_t);
-template
-dberr_t btr_cur_t::search_leaf<PAGE_CUR_LE>(const dtuple_t *, btr_latch_mode,
-                                            mtr_t *, uint64_t);
 
 /********************************************************************//**
 Searches an index tree and positions a tree cursor on a given non-leaf level.

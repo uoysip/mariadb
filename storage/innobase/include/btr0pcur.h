@@ -416,11 +416,11 @@ inline rec_t *btr_pcur_get_rec(const btr_pcur_t *cursor)
 
 /**************************************************************//**
 Initializes and opens a persistent cursor to an index tree. */
-template<page_cur_mode_t mode>
 inline
 dberr_t
 btr_pcur_open(
 	const dtuple_t*	tuple,	/*!< in: tuple on which search done */
+        page_cur_mode_t	mode,	/*!< in: PAGE_CUR_LE, ... */
 	btr_latch_mode	latch_mode,/*!< in: BTR_SEARCH_LEAF, ... */
 	btr_pcur_t*	cursor, /*!< in: memory buffer for persistent cursor */
 	ib_uint64_t	autoinc,/*!< in: PAGE_ROOT_AUTO_INC to be written
@@ -432,7 +432,7 @@ btr_pcur_open(
   cursor->search_mode= mode;
   cursor->pos_state= BTR_PCUR_IS_POSITIONED;
   cursor->trx_if_known= nullptr;
-  return cursor->btr_cur.search_leaf<mode>(tuple, latch_mode, mtr, autoinc);
+  return cursor->btr_cur.search_leaf(tuple, mode, latch_mode, mtr, autoinc);
 }
 
 /** Open a cursor on the first user record satisfying the search condition;
@@ -450,7 +450,7 @@ btr_pcur_open_on_user_rec(
 {
   ut_ad(latch_mode == BTR_SEARCH_LEAF || latch_mode == BTR_MODIFY_LEAF);
   if (dberr_t err=
-      btr_pcur_open<PAGE_CUR_GE>(tuple, latch_mode, cursor, 0, mtr))
+      btr_pcur_open(tuple, PAGE_CUR_GE, latch_mode, cursor, 0, mtr))
     return err;
   if (!btr_pcur_is_after_last_on_page(cursor) ||
       btr_pcur_is_after_last_in_tree(cursor))
