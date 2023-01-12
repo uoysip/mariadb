@@ -1163,7 +1163,6 @@ dberr_t btr_cur_t::search_leaf(const dtuple_t *tuple, page_cur_mode_t mode,
   ut_ad(index()->is_btree() || index()->is_ibuf());
   ut_ad(!index()->is_ibuf() || ibuf_inside(mtr));
 
-  buf_block_t *block;
   buf_block_t *guess;
   btr_op_t btr_op;
   btr_intention_t lock_intention;
@@ -1340,8 +1339,9 @@ dberr_t btr_cur_t::search_leaf(const dtuple_t *tuple, page_cur_mode_t mode,
  retry_page_get:
   dberr_t err;
   auto block_savepoint= mtr->get_savepoint();
-  block= buf_page_get_gen(page_id, zip_size, rw_latch, guess, buf_mode, mtr,
-                          &err, height == 0 && !index()->is_clust());
+  buf_block_t *block=
+    buf_page_get_gen(page_id, zip_size, rw_latch, guess, buf_mode, mtr,
+                     &err, height == 0 && !index()->is_clust());
   if (!block)
   {
     switch (err) {
@@ -1417,6 +1417,16 @@ dberr_t btr_cur_t::search_leaf(const dtuple_t *tuple, page_cur_mode_t mode,
     goto retry_page_get;
   }
 
+  if (!!page_is_comp(block->page.frame) != index()->table->not_redundant() ||
+      btr_page_get_index_id(block->page.frame) != index()->id ||
+      fil_page_get_type(block->page.frame) == FIL_PAGE_RTREE ||
+      !fil_page_index_page_check(block->page.frame))
+  {
+  corrupted:
+    err= DB_CORRUPTION;
+    goto func_exit;
+  }
+
   ut_ad(block == mtr->at_savepoint(block_savepoint));
   const page_t *page= buf_block_get_frame(block);
 #ifdef UNIV_ZIP_DEBUG
@@ -1427,19 +1437,12 @@ dberr_t btr_cur_t::search_leaf(const dtuple_t *tuple, page_cur_mode_t mode,
   }
 #endif /* UNIV_ZIP_DEBUG */
 
-  ut_ad(fil_page_index_page_check(page));
-  ut_ad(index()->id == btr_page_get_index_id(page));
-
   const uint32_t page_level= btr_page_get_level(page);
 
   if (height != ULINT_UNDEFINED)
   {
     if (UNIV_UNLIKELY(height != page_level))
-    {
-    corrupted:
-      err= DB_CORRUPTION;
-      goto func_exit;
-    }
+      goto corrupted;
   }
   else
   {
@@ -1582,7 +1585,7 @@ dberr_t btr_cur_t::search_leaf(const dtuple_t *tuple, page_cur_mode_t mode,
     {
       block->page.lock.s_unlock();
       buf_block_t *left= btr_block_get(*index(), btr_page_get_prev(page),
-                                       RW_S_LATCH, true, mtr, &err);
+                                       RW_S_LATCH, false, mtr, &err);
       block->page.lock.s_lock();
       if (!left)
         goto func_exit;
@@ -1710,7 +1713,6 @@ dberr_t btr_cur_search_to_nth_level(ulint level,
 	ulint		height;
 	ulint		up_match;
 	ulint		low_match;
-	ulint		rw_latch;
 	page_cur_t*	page_cursor;
 
 	btr_intention_t	lock_intention;
@@ -1839,22 +1841,14 @@ dberr_t btr_cur_search_to_nth_level(ulint level,
 	height = ULINT_UNDEFINED;
 
 search_loop:
-	rw_latch = RW_NO_LATCH;
-
-	if (height != 0) {
-		/* We are about to fetch the root or a non-leaf page. */
-		if (latch_mode != BTR_MODIFY_TREE || height == level) {
-			rw_latch = upper_rw_latch;
-		}
-	} else if (latch_mode <= BTR_MODIFY_LEAF) {
-		rw_latch = latch_mode;
-	}
+	ulint rw_latch = (height == level || latch_mode != BTR_MODIFY_TREE)
+		? upper_rw_latch
+		: RW_NO_LATCH;
 
 	dberr_t err;
 	auto block_savepoint = mtr->get_savepoint();
 	block = buf_page_get_gen(page_id, zip_size, rw_latch, guess,
-				 BUF_GET, mtr, &err,
-				 height == 0 && !index->is_clust());
+				 BUF_GET, mtr, &err);
 	if (!block) {
 		switch (err) {
 		case DB_DECRYPTION_FAILED:
@@ -1883,6 +1877,11 @@ func_exit:
 	ut_ad(index->id == btr_page_get_index_id(page));
 
 	if (height != ULINT_UNDEFINED) {
+		if (height != btr_page_get_level(page)) {
+corrupted:
+			err = DB_CORRUPTION;
+			goto func_exit;
+		}
 	} else if (page_is_leaf(page)
 		   && rw_latch != RW_NO_LATCH
 		   && rw_latch != root_leaf_rw_latch) {
@@ -1900,6 +1899,9 @@ func_exit:
 		/* We are in the root node */
 
 		height = btr_page_get_level(page);
+		if (!height) {
+			goto corrupted;
+		}
 		cursor->tree_height = height + 1;
 
 #ifdef BTR_CUR_ADAPT
@@ -1907,20 +1909,15 @@ func_exit:
 #endif
 	}
 
-	ut_ad(height != 0);
-
 	page_cursor->block = block;
 
 	/* Search for complete index fields. */
 	if (page_cur_search_with_match(tuple, PAGE_CUR_LE, &up_match,
 				       &low_match, page_cursor, nullptr)) {
-		err = DB_CORRUPTION;
-		goto func_exit;
+		goto corrupted;
 	}
 
 	/* If this is the desired level, leave the loop */
-
-	ut_ad(height == btr_page_get_level(page_cur_get_page(page_cursor)));
 
 	if (level != height) {
 
@@ -1975,9 +1972,7 @@ need_opposite_intention:
 			ut_ad(upper_rw_latch == RW_X_LATCH);
 
 			if (UNIV_UNLIKELY(!first_rec)) {
-			corrupted:
-				err = DB_CORRUPTION;
-				goto func_exit;
+				goto corrupted;
 			}
 			if (node_ptr == first_rec
 			    || page_rec_is_last(node_ptr, page)) {
