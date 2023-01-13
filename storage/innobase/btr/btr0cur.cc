@@ -1476,8 +1476,8 @@ dberr_t btr_cur_t::search_leaf(const dtuple_t *tuple, page_cur_mode_t mode,
     switch (latch_mode) {
     case BTR_MODIFY_ROOT_AND_LEAF:
     case BTR_MODIFY_ROOT_AND_LEAF_ALREADY_LATCHED:
-      ut_ad(savepoint == latch_by_caller);
-      ut_ad(mtr->get_savepoint() > latch_by_caller);
+      ut_ad(!(savepoint - latch_by_caller));
+      ut_ad(mtr->get_savepoint() > savepoint);
       /* Release any other latches than those on the root and leaf pages. */
       if (block_savepoint > root_savepoint)
       {
