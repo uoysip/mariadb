@@ -123,6 +123,19 @@ struct mtr_t {
     return static_cast<buf_block_t*>(slot.object);
   }
 
+  /** Try to get a block at a savepoint.
+  @param savepoint the savepoint right before the block was acquired
+  @return the block at the savepoint
+  @retval nullptr  if no buffer block was registered at that savepoint */
+  buf_block_t *block_at_savepoint(ulint savepoint) const
+  {
+    ut_ad(is_active());
+    const mtr_memo_slot_t &slot= m_memo[savepoint];
+    return slot.type < MTR_MEMO_S_LOCK
+      ? static_cast<buf_block_t*>(slot.object)
+      : nullptr;
+  }
+
   /** @return if we are about to make a clean buffer block dirty */
   static bool is_block_dirtied(const buf_page_t &b)
   {

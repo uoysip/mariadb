@@ -712,27 +712,21 @@ btr_node_ptr_get_child(
 		mtr, err);
 }
 
-MY_ATTRIBUTE((nonnull(2,3,5), warn_unused_result))
+MY_ATTRIBUTE((nonnull, warn_unused_result))
 /************************************************************//**
 Returns the upper level node pointer to a page. It is assumed that mtr holds
 an sx-latch on the tree.
 @return rec_get_offsets() of the node pointer record */
 static
 rec_offs*
-btr_page_get_father_node_ptr_func(
-/*==============================*/
+btr_page_get_father_node_ptr_for_validate(
 	rec_offs*	offsets,/*!< in: work area for the return value */
 	mem_heap_t*	heap,	/*!< in: memory heap to use */
 	btr_cur_t*	cursor,	/*!< in: cursor pointing to user record,
 				out: cursor on node pointer record,
 				its page x-latched */
-	btr_latch_mode	latch_mode,/*!< in: BTR_CONT_MODIFY_TREE
-				or BTR_CONT_SEARCH_TREE */
 	mtr_t*		mtr)	/*!< in: mtr */
 {
-	ut_ad(latch_mode == BTR_CONT_MODIFY_TREE
-	      || latch_mode == BTR_CONT_SEARCH_TREE);
-
 	const uint32_t page_no = btr_cur_get_block(cursor)->page.id().page_no();
 	dict_index_t* index = btr_cur_get_index(cursor);
 	ut_ad(!dict_index_is_spatial(index));
@@ -752,7 +746,7 @@ btr_page_get_father_node_ptr_func(
 					dict_index_build_node_ptr(index,
 								  user_rec, 0,
 								  heap, level),
-					latch_mode,
+					BTR_CONT_SEARCH_TREE,
 					cursor, mtr) != DB_SUCCESS) {
 		return nullptr;
 	}
@@ -771,13 +765,65 @@ btr_page_get_father_node_ptr_func(
 	return(offsets);
 }
 
-#define btr_page_get_father_node_ptr(of,heap,cur,mtr)			\
-	btr_page_get_father_node_ptr_func(				\
-		of,heap,cur,BTR_CONT_MODIFY_TREE,mtr)
+MY_ATTRIBUTE((nonnull(2,3,4), warn_unused_result))
+/************************************************************//**
+Returns the upper level node pointer to a page. It is assumed that
+it has already been latched.
+@return rec_get_offsets() of the node pointer record */
+static
+rec_offs*
+btr_page_get_parent(
+	rec_offs*	offsets,/*!< in: work area for the return value */
+	mem_heap_t*	heap,	/*!< in: memory heap to use */
+	btr_cur_t*	cursor,	/*!< in: cursor pointing to user record,
+				out: cursor on node pointer record,
+				its page x-latched */
+	mtr_t*		mtr)	/*!< in: mtr */
+{
+  const uint32_t page_no= cursor->block()->page.id().page_no();
+  const dict_index_t *index= cursor->index();
+  ut_ad(!index->is_spatial());
+  ut_ad(index->page != page_no);
 
-#define btr_page_get_father_node_ptr_for_validate(of,heap,cur,mtr)	\
-	btr_page_get_father_node_ptr_func(				\
-		of,heap,cur,BTR_CONT_SEARCH_TREE,mtr)
+  uint32_t p= index->page;
+  const dtuple_t *tuple=
+    dict_index_build_node_ptr(index, btr_cur_get_rec(cursor), 0, heap,
+                              btr_page_get_level(btr_cur_get_page(cursor)));
+
+  ulint i;
+  for (i= 0; i < mtr->get_savepoint(); i++)
+    if (buf_block_t *block= mtr->block_at_savepoint(i))
+      if (block->page.id().page_no() == p)
+      {
+        ut_ad(block->page.lock.have_x() ||
+              (!block->page.lock.have_s() && index->lock.have_x()));
+        ulint up_match= 0, low_match= 0;
+        cursor->page_cur.block= block;
+        if (page_cur_search_with_match(tuple, PAGE_CUR_LE, &up_match,
+                                       &low_match, &cursor->page_cur,
+                                       nullptr))
+          return nullptr;
+        offsets= rec_get_offsets(cursor->page_cur.rec, index, offsets, 0,
+                                 ULINT_UNDEFINED, &heap);
+        p= btr_node_ptr_get_child_page_no(cursor->page_cur.rec, offsets);
+        if (p != page_no)
+        {
+          i= 0; // FIXME: require all pages to be latched in order!
+          continue;
+        }
+        if (!block->page.lock.have_x())
+        {
+          ut_ad(index->lock.have_x());
+          if (block->page.lock.x_lock_upgraded())
+            mtr->page_lock_upgrade(*block);
+          else
+            mtr->x_latch_at_savepoint(i, block);
+        }
+        return offsets;
+      }
+
+  return nullptr;
+}
 
 /************************************************************//**
 Returns the upper level node pointer to a page. It is assumed that mtr holds
@@ -798,7 +844,7 @@ btr_page_get_father_block(
   if (UNIV_UNLIKELY(!rec))
     return nullptr;
   cursor->page_cur.rec= rec;
-  return btr_page_get_father_node_ptr(offsets, heap, cursor, mtr);
+  return btr_page_get_parent(offsets, heap, cursor, mtr);
 }
 
 /** Seek to the parent page of a B-tree page.
@@ -813,7 +859,7 @@ bool btr_page_get_father(mtr_t* mtr, btr_cur_t* cursor)
     return false;
   cursor->page_cur.rec= rec;
   mem_heap_t *heap= mem_heap_create(100);
-  const bool got= btr_page_get_father_node_ptr(nullptr, heap, cursor, mtr);
+  const bool got= btr_page_get_parent(nullptr, heap, cursor, mtr);
   mem_heap_free(heap);
   return got;
 }
@@ -4482,6 +4528,8 @@ btr_check_node_ptr(
 	} else {
 		offsets = btr_page_get_father_block(NULL, heap, mtr, &cursor);
 	}
+
+	ut_ad(offsets);
 
 	if (page_is_leaf(page)) {
 
