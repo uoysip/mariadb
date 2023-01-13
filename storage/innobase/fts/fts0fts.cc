@@ -2963,6 +2963,10 @@ fts_commit_table(
 		}
 	}
 
+	if (error == DB_SUCCESS) {
+		error = trx->bulk_insert_apply();
+	}
+
 	fts_sql_commit(trx);
 
 	trx->free();
