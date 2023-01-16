@@ -476,9 +476,7 @@ mtr_t::get_already_latched(const page_id_t id, mtr_memo_type_t type) const
         return block;
     }
   }
-#if 0 // FIXME: enable this
   ut_ad("a latched block was not found" == 0);
-#endif
   return nullptr;
 }
 
@@ -4256,17 +4254,6 @@ btr_discard_page(
 		merge_page_id.set_page_no(left_page_no);
 		merge_block = mtr->get_already_latched(merge_page_id,
 						       MTR_MEMO_PAGE_X_FIX);
-#if 1 // FIXME: remove this
-		if (!merge_block) {
-			dberr_t err;
-			merge_block = btr_block_get(*index, left_page_no,
-						    RW_X_LATCH,
-						    true, mtr, &err);
-			if (UNIV_UNLIKELY(!merge_block)) {
-				return err;
-			}
-		}
-#endif
 		ut_ad(!memcmp_aligned<4>(merge_block->page.frame
 					 + FIL_PAGE_NEXT,
 					 block->page.frame + FIL_PAGE_OFFSET,
@@ -4281,17 +4268,6 @@ btr_discard_page(
 		merge_page_id.set_page_no(right_page_no);
 		merge_block = mtr->get_already_latched(merge_page_id,
 						       MTR_MEMO_PAGE_X_FIX);
-#if 1 // FIXME: remove this
-		if (!merge_block) {
-			dberr_t err;
-			merge_block = btr_block_get(*index, right_page_no,
-						    RW_X_LATCH,
-						    true, mtr, &err);
-			if (UNIV_UNLIKELY(!merge_block)) {
-				return err;
-			}
-		}
-#endif
 		ut_ad(!memcmp_aligned<4>(merge_block->page.frame
 					 + FIL_PAGE_PREV,
 					 block->page.frame + FIL_PAGE_OFFSET,

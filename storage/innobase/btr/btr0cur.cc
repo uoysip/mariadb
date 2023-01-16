@@ -1189,7 +1189,8 @@ dberr_t btr_cur_t::search_leaf(const dtuple_t *tuple, page_cur_mode_t mode,
 
   ut_ad(!(latch_mode & BTR_ALREADY_S_LATCHED) ||
         mtr->memo_contains_flagged(&index()->lock,
-                                   MTR_MEMO_S_LOCK | MTR_MEMO_SX_LOCK));
+                                   MTR_MEMO_S_LOCK | MTR_MEMO_SX_LOCK |
+                                   MTR_MEMO_X_LOCK));
 
   /* These flags are mutually exclusive, they are lumped together
      with the latch mode for historical reasons. It's possible for
@@ -1227,6 +1228,7 @@ dberr_t btr_cur_t::search_leaf(const dtuple_t *tuple, page_cur_mode_t mode,
         || latch_mode == BTR_SEARCH_LEAF
         || latch_mode == BTR_SEARCH_TREE
         || latch_mode == BTR_MODIFY_LEAF
+        || latch_mode == BTR_MODIFY_TREE
         || latch_mode == BTR_MODIFY_ROOT_AND_LEAF);
 
   flag= BTR_CUR_BINARY;
@@ -1272,6 +1274,11 @@ dberr_t btr_cur_t::search_leaf(const dtuple_t *tuple, page_cur_mode_t mode,
   switch (latch_mode) {
   case BTR_MODIFY_TREE:
     node_ptr_max_size= btr_node_ptr_max_size(index());
+    if (latch_by_caller)
+    {
+      ut_ad(mtr->memo_contains_flagged(&index()->lock, MTR_MEMO_X_LOCK));
+      break;
+    }
 #if 1 // Work around MDEV-29835 hangs
     mtr_x_lock_index(index(), mtr);
 #else
@@ -1308,16 +1315,14 @@ dberr_t btr_cur_t::search_leaf(const dtuple_t *tuple, page_cur_mode_t mode,
   page_id_t page_id(index()->table->space_id, index()->page);
 
   const page_cur_mode_t page_mode= btr_cur_nonleaf_mode(mode);
-
- search_root_loop:
+  rw_lock_type_t rw_latch= RW_NO_LATCH;
+  ulint height= ULINT_UNDEFINED;
   up_match= 0;
   up_bytes= 0;
   low_match= 0;
   low_bytes= 0;
-  ulint height= ULINT_UNDEFINED;
  search_loop:
   ulint buf_mode= BUF_GET;
-  rw_lock_type_t rw_latch= RW_NO_LATCH;
 
   switch (latch_mode) {
   default:
@@ -1354,8 +1359,8 @@ dberr_t btr_cur_t::search_leaf(const dtuple_t *tuple, page_cur_mode_t mode,
         mem_heap_free(heap);
       return err;
     case DB_SUCCESS:
-      /* This must be a search to perform an insert/delete mark/ delete;
-      try using the insert/delete buffer */
+      /* This must be a search to perform an insert, delete mark, or delete;
+      try using the change buffer */
       ut_ad(height == 0);
       ut_ad(thr);
       break;
@@ -1500,9 +1505,11 @@ dberr_t btr_cur_t::search_leaf(const dtuple_t *tuple, page_cur_mode_t mode,
       ut_ad(low_match != ULINT_UNDEFINED || mode != PAGE_CUR_LE);
       goto func_exit;
     case BTR_MODIFY_TREE:
-      ut_ad(rw_latch == RW_NO_LATCH);
-      for (auto i= root_savepoint; i < block_savepoint; i++)
-        mtr->x_latch_at_savepoint(i, mtr->at_savepoint(i));
+      if (rw_latch == RW_NO_LATCH)
+        for (auto i= root_savepoint; i < block_savepoint; i++)
+          mtr->x_latch_at_savepoint(i, mtr->at_savepoint(i));
+      else
+        ut_ad(rw_latch == RW_X_LATCH);
       btr_cur_latch_leaves(block_savepoint, latch_mode, this, mtr);
       break;
     default:
@@ -1598,10 +1605,7 @@ dberr_t btr_cur_t::search_leaf(const dtuple_t *tuple, page_cur_mode_t mode,
       delete intention, it might cause node_ptr insert for the upper
       level. We should change the intention and retry. */
     need_opposite_intention:
-      lock_intention= BTR_INTENTION_BOTH;
-      page_id.set_page_no(index()->page);
-      mtr->rollback_to_savepoint(root_savepoint);
-      goto search_root_loop;
+      return pessimistic_search_leaf(tuple, mode, mtr);
     }
 
     if (detected_same_key_root || lock_intention != BTR_INTENTION_BOTH ||
@@ -1681,6 +1685,129 @@ dberr_t btr_cur_t::search_leaf(const dtuple_t *tuple, page_cur_mode_t mode,
     }
   }
 
+  goto search_loop;
+}
+
+ATTRIBUTE_COLD
+dberr_t btr_cur_t::pessimistic_search_leaf(const dtuple_t *tuple,
+                                           page_cur_mode_t mode, mtr_t *mtr)
+{
+  ut_ad(index()->is_btree() || index()->is_ibuf());
+  ut_ad(!index()->is_ibuf() || ibuf_inside(mtr));
+
+  rec_offs	offsets_[REC_OFFS_NORMAL_SIZE];
+  rec_offs*	offsets		= offsets_;
+  rec_offs_init(offsets_);
+
+  ut_ad(flag == BTR_CUR_BINARY);
+  ut_ad(dict_index_check_search_tuple(index(), tuple));
+  ut_ad(dtuple_check_typed(tuple));
+  buf_block_t *block= mtr->at_savepoint(1);
+  ut_ad(block->page.id().page_no() == index()->page);
+  block->page.fix();
+  mtr->rollback_to_savepoint(1);
+  ut_ad(mtr->memo_contains_flagged(&index()->lock,
+                                   MTR_MEMO_SX_LOCK | MTR_MEMO_X_LOCK));
+
+  const page_cur_mode_t page_mode{btr_cur_nonleaf_mode(mode)};
+
+  mtr->page_lock(block, RW_X_LATCH);
+
+  up_match= 0;
+  up_bytes= 0;
+  low_match= 0;
+  low_bytes= 0;
+  ulint height= btr_page_get_level(block->page.frame);
+  tree_height= height + 1;
+  mem_heap_t *heap= nullptr;
+
+ search_loop:
+  dberr_t err;
+  page_cur.block= block;
+
+  if (UNIV_UNLIKELY(!height))
+  {
+    if (page_cur_search_with_match(tuple, mode, &up_match, &low_match,
+                                   &page_cur, nullptr))
+    corrupted:
+      err= DB_CORRUPTION;
+    else
+    {
+      ut_ad(up_match != ULINT_UNDEFINED || mode != PAGE_CUR_GE);
+      ut_ad(up_match != ULINT_UNDEFINED || mode != PAGE_CUR_LE);
+      ut_ad(low_match != ULINT_UNDEFINED || mode != PAGE_CUR_LE);
+
+#ifdef BTR_CUR_HASH_ADAPT
+      /* We do a dirty read of btr_search_enabled here.  We will
+      properly check btr_search_enabled again in
+      btr_search_build_page_hash_index() before building a page hash
+      index, while holding search latch. */
+      if (!btr_search_enabled);
+      else if (tuple->info_bits & REC_INFO_MIN_REC_FLAG)
+        /* This may be a search tuple for btr_pcur_t::restore_position(). */
+        ut_ad(tuple->is_metadata() ||
+              (tuple->is_metadata(tuple->info_bits ^ REC_STATUS_INSTANT)));
+      else if (index()->table->is_temporary());
+      else if (!rec_is_metadata(page_cur.rec, *index()))
+        btr_search_info_update(index(), this);
+#endif /* BTR_CUR_HASH_ADAPT */
+      err= DB_SUCCESS;
+    }
+
+  func_exit:
+    if (UNIV_LIKELY_NULL(heap))
+      mem_heap_free(heap);
+    return err;
+  }
+
+  if (page_cur_search_with_match(tuple, page_mode, &up_match, &low_match,
+                                 &page_cur, nullptr))
+    goto corrupted;
+
+  page_id_t page_id{block->page.id()};
+
+  offsets= rec_get_offsets(page_cur.rec, index(), offsets, 0, ULINT_UNDEFINED,
+                           &heap);
+  /* Go to the child node */
+  page_id.set_page_no(btr_node_ptr_get_child_page_no(page_cur.rec, offsets));
+
+  const auto block_savepoint= mtr->get_savepoint();
+  block=
+    buf_page_get_gen(page_id, block->zip_size(), RW_NO_LATCH, nullptr, BUF_GET,
+                     mtr, &err, !--height && !index()->is_clust());
+
+  if (!block)
+  {
+    if (err == DB_DECRYPTION_FAILED)
+      btr_decryption_failed(*index());
+    goto func_exit;
+  }
+
+  if (!!page_is_comp(block->page.frame) != index()->table->not_redundant() ||
+      btr_page_get_index_id(block->page.frame) != index()->id ||
+      fil_page_get_type(block->page.frame) == FIL_PAGE_RTREE ||
+      !fil_page_index_page_check(block->page.frame))
+    goto corrupted;
+
+  if (height != btr_page_get_level(block->page.frame))
+    goto corrupted;
+
+  if (page_has_prev(block->page.frame) &&
+      !btr_block_get(*index(), btr_page_get_prev(block->page.frame),
+                     RW_X_LATCH, false, mtr, &err))
+    goto func_exit;
+  mtr->x_latch_at_savepoint(block_savepoint, block);
+#ifdef BTR_CUR_HASH_ADAPT
+  btr_search_drop_page_hash_index(block, true);
+#endif
+#ifdef UNIV_ZIP_DEBUG
+  const page_zip_des_t *page_zip= buf_block_get_page_zip(block);
+  ut_a(!page_zip || page_zip_validate(page_zip, page, index()));
+#endif /* UNIV_ZIP_DEBUG */
+  if (page_has_next(block->page.frame) &&
+      !btr_block_get(*index(), btr_page_get_next(block->page.frame),
+                     RW_X_LATCH, false, mtr, &err))
+    goto func_exit;
   goto search_loop;
 }
 

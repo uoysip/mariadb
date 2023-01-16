@@ -292,6 +292,7 @@ row_undo_ins_remove_sec_low(
 		mtr_s_lock_index(index, &mtr);
 	} else {
 		ut_ad(mode == BTR_PURGE_TREE);
+		mode = BTR_PURGE_TREE_ALREADY_LATCHED;
 		mtr_x_lock_index(index, &mtr);
 	}
 

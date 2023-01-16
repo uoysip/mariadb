@@ -138,6 +138,9 @@ enum btr_latch_mode {
 
 	/** Attempt to delete a record in the tree. */
 	BTR_PURGE_TREE = BTR_MODIFY_TREE | BTR_LATCH_FOR_DELETE,
+	/** Attempt to delete a record in an x-latched tree. */
+	BTR_PURGE_TREE_ALREADY_LATCHED = BTR_PURGE_TREE
+	| BTR_ALREADY_S_LATCHED,
 
 	/** Attempt to insert a record into the tree. */
 	BTR_INSERT_TREE = BTR_MODIFY_TREE | BTR_LATCH_FOR_INSERT,
