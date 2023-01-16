@@ -4298,8 +4298,6 @@ btr_discard_page(
 		return DB_CORRUPTION;
 	}
 
-	ut_ad(!merge_block->page.lock.not_recursive()
-	      || mtr->memo_contains(index->lock, MTR_MEMO_X_LOCK));
 	btr_search_drop_page_hash_index(block, false);
 
 	if (dict_index_is_spatial(index)) {
