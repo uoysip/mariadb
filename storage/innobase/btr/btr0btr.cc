@@ -712,7 +712,7 @@ btr_node_ptr_get_child(
 		mtr, err);
 }
 
-MY_ATTRIBUTE((nonnull, warn_unused_result))
+MY_ATTRIBUTE((nonnull(2,3,4), warn_unused_result))
 /************************************************************//**
 Returns the upper level node pointer to a page. It is assumed that mtr holds
 an sx-latch on the tree.
