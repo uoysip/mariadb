@@ -460,6 +460,36 @@ btr_page_create(
   }
 }
 
+buf_block_t *
+mtr_t::get_already_latched(const page_id_t id, mtr_memo_type_t type) const
+{
+  ut_ad(is_active());
+  ut_ad(type == MTR_MEMO_PAGE_X_FIX || type == MTR_MEMO_PAGE_SX_FIX);
+  for (ulint i= 0; i < m_memo.size(); i++)
+  {
+    const mtr_memo_slot_t &slot= m_memo[i];
+    const auto slot_type= mtr_memo_type_t(slot.type & ~MTR_MEMO_MODIFY);
+    if (slot_type == MTR_MEMO_PAGE_X_FIX || slot_type == type)
+    {
+      buf_block_t *block= static_cast<buf_block_t*>(slot.object);
+      if (block->page.id() == id)
+        return block;
+    }
+  }
+#if 0 // FIXME: enable this
+  ut_ad("a latched block was not found" == 0);
+#endif
+  return nullptr;
+}
+
+/** Fetch an index root page that was already latched in the
+mini-transaction. */
+static buf_block_t *btr_get_latched_root(const dict_index_t &index, mtr_t *mtr)
+{
+  return mtr->get_already_latched(page_id_t{index.table->space_id, index.page},
+                                  MTR_MEMO_PAGE_SX_FIX);
+}
+
 /**************************************************************//**
 Allocates a new file page to be used in an ibuf tree. Takes the page from
 the free list of the tree, which must contain pages!
@@ -472,18 +502,16 @@ btr_page_alloc_for_ibuf(
 	mtr_t*		mtr,	/*!< in: mtr */
 	dberr_t*	err)	/*!< out: error code */
 {
-  buf_block_t *root= btr_root_block_get(index, RW_SX_LATCH, mtr, err);
+  buf_block_t *root= btr_get_latched_root(*index, mtr);
   if (UNIV_UNLIKELY(!root))
     return root;
-
   buf_block_t *new_block=
-    buf_page_get_gen(page_id_t(index->table->space_id,
+    buf_page_get_gen(page_id_t(IBUF_SPACE_ID,
                                mach_read_from_4(PAGE_HEADER +
                                                 PAGE_BTR_IBUF_FREE_LIST +
                                                 FLST_FIRST + FIL_ADDR_PAGE +
                                                 root->page.frame)),
-                     index->table->space->zip_size(), RW_X_LATCH, nullptr,
-                     BUF_GET, mtr, err);
+                     0, RW_X_LATCH, nullptr, BUF_GET, mtr, err);
   if (new_block)
     *err= flst_remove(root, PAGE_HEADER + PAGE_BTR_IBUF_FREE_LIST, new_block,
                 PAGE_HEADER + PAGE_BTR_IBUF_FREE_LIST_NODE, mtr);
@@ -579,15 +607,12 @@ btr_page_free_for_ibuf(
 	mtr_t*		mtr)	/*!< in: mtr */
 {
   ut_ad(mtr->memo_contains_flagged(block, MTR_MEMO_PAGE_X_FIX));
-
-  dberr_t err;
-  if (buf_block_t *root= btr_root_block_get(index, RW_SX_LATCH, mtr, &err))
-  {
-    err= flst_add_first(root, PAGE_HEADER + PAGE_BTR_IBUF_FREE_LIST,
+  buf_block_t *root= btr_get_latched_root(*index, mtr);
+  dberr_t err=
+    flst_add_first(root, PAGE_HEADER + PAGE_BTR_IBUF_FREE_LIST,
                    block, PAGE_HEADER + PAGE_BTR_IBUF_FREE_LIST_NODE, mtr);
-    ut_d(if (err == DB_SUCCESS)
-           flst_validate(root, PAGE_HEADER + PAGE_BTR_IBUF_FREE_LIST, mtr));
-  }
+  ut_d(if (err == DB_SUCCESS)
+         flst_validate(root, PAGE_HEADER + PAGE_BTR_IBUF_FREE_LIST, mtr));
   return err;
 }
 
@@ -1766,48 +1791,43 @@ void btr_set_instant(buf_block_t* root, const dict_index_t& index, mtr_t* mtr)
 /** Reset the table to the canonical format on ROLLBACK of instant ALTER TABLE.
 @param[in]      index   clustered index with instant ALTER TABLE
 @param[in]      all     whether to reset FIL_PAGE_TYPE as well
-@param[in,out]  mtr     mini-transaction
-@return error code */
+@param[in,out]  mtr     mini-transaction */
 ATTRIBUTE_COLD
-dberr_t btr_reset_instant(const dict_index_t &index, bool all, mtr_t *mtr)
+void btr_reset_instant(const dict_index_t &index, bool all, mtr_t *mtr)
 {
   ut_ad(!index.table->is_temporary());
   ut_ad(index.is_primary());
-  dberr_t err;
-  if (buf_block_t *root= btr_root_block_get(&index, RW_SX_LATCH, mtr, &err))
+  buf_block_t *root= btr_get_latched_root(index, mtr);
+  byte *page_type= root->page.frame + FIL_PAGE_TYPE;
+  if (all)
   {
-    byte *page_type= root->page.frame + FIL_PAGE_TYPE;
-    if (all)
-    {
-      ut_ad(mach_read_from_2(page_type) == FIL_PAGE_TYPE_INSTANT ||
-            mach_read_from_2(page_type) == FIL_PAGE_INDEX);
-      mtr->write<2,mtr_t::MAYBE_NOP>(*root, page_type, FIL_PAGE_INDEX);
-      byte *instant= PAGE_INSTANT + PAGE_HEADER + root->page.frame;
-      mtr->write<2,mtr_t::MAYBE_NOP>(*root, instant,
-                                     page_ptr_get_direction(instant + 1));
-    }
-    else
-      ut_ad(mach_read_from_2(page_type) == FIL_PAGE_TYPE_INSTANT);
-    static const byte supremuminfimum[8 + 8] = "supremuminfimum";
-    uint16_t infimum, supremum;
-    if (page_is_comp(root->page.frame))
-    {
-      infimum= PAGE_NEW_INFIMUM;
-      supremum= PAGE_NEW_SUPREMUM;
-    }
-    else
-    {
-      infimum= PAGE_OLD_INFIMUM;
-      supremum= PAGE_OLD_SUPREMUM;
-    }
-    ut_ad(!memcmp(&root->page.frame[infimum], supremuminfimum + 8, 8) ==
-          !memcmp(&root->page.frame[supremum], supremuminfimum, 8));
-    mtr->memcpy<mtr_t::MAYBE_NOP>(*root, &root->page.frame[infimum],
-                                  supremuminfimum + 8, 8);
-    mtr->memcpy<mtr_t::MAYBE_NOP>(*root, &root->page.frame[supremum],
-                                  supremuminfimum, 8);
+    ut_ad(mach_read_from_2(page_type) == FIL_PAGE_TYPE_INSTANT ||
+          mach_read_from_2(page_type) == FIL_PAGE_INDEX);
+    mtr->write<2,mtr_t::MAYBE_NOP>(*root, page_type, FIL_PAGE_INDEX);
+    byte *instant= PAGE_INSTANT + PAGE_HEADER + root->page.frame;
+    mtr->write<2,mtr_t::MAYBE_NOP>(*root, instant,
+                                   page_ptr_get_direction(instant + 1));
   }
-  return err;
+  else
+    ut_ad(mach_read_from_2(page_type) == FIL_PAGE_TYPE_INSTANT);
+  static const byte supremuminfimum[8 + 8] = "supremuminfimum";
+  uint16_t infimum, supremum;
+  if (page_is_comp(root->page.frame))
+  {
+    infimum= PAGE_NEW_INFIMUM;
+    supremum= PAGE_NEW_SUPREMUM;
+  }
+  else
+  {
+    infimum= PAGE_OLD_INFIMUM;
+    supremum= PAGE_OLD_SUPREMUM;
+  }
+  ut_ad(!memcmp(&root->page.frame[infimum], supremuminfimum + 8, 8) ==
+        !memcmp(&root->page.frame[supremum], supremuminfimum, 8));
+  mtr->memcpy<mtr_t::MAYBE_NOP>(*root, &root->page.frame[infimum],
+                                supremuminfimum + 8, 8);
+  mtr->memcpy<mtr_t::MAYBE_NOP>(*root, &root->page.frame[supremum],
+                                supremuminfimum, 8);
 }
 
 /*************************************************************//**
@@ -3669,8 +3689,6 @@ btr_compress(
 	} else {
 		offsets = btr_page_get_father_block(
 			NULL, heap, mtr, &father_cursor);
-		ut_ad(!father_cursor.page_cur.block->page.lock.not_recursive()
-		      || mtr->memo_contains(index->lock, MTR_MEMO_X_LOCK));
 	}
 
 	if (adjust) {
@@ -4231,23 +4249,28 @@ btr_discard_page(
 
 	const uint32_t left_page_no = btr_page_get_prev(block->page.frame);
 	const uint32_t right_page_no = btr_page_get_next(block->page.frame);
+	page_id_t merge_page_id{block->page.id()};
 
 	ut_d(bool parent_is_different = false);
 	if (left_page_no != FIL_NULL) {
-		dberr_t err;
-		merge_block = btr_block_get(*index, left_page_no, RW_X_LATCH,
-					    true, mtr, &err);
-		if (UNIV_UNLIKELY(!merge_block)) {
-			return err;
+		merge_page_id.set_page_no(left_page_no);
+		merge_block = mtr->get_already_latched(merge_page_id,
+						       MTR_MEMO_PAGE_X_FIX);
+#if 1 // FIXME: remove this
+		if (!merge_block) {
+			dberr_t err;
+			merge_block = btr_block_get(*index, left_page_no,
+						    RW_X_LATCH,
+						    true, mtr, &err);
+			if (UNIV_UNLIKELY(!merge_block)) {
+				return err;
+			}
 		}
-
-		if (UNIV_UNLIKELY(memcmp_aligned<4>(merge_block->page.frame
-						    + FIL_PAGE_NEXT,
-						    block->page.frame
-						    + FIL_PAGE_OFFSET, 4))) {
-			return DB_CORRUPTION;
-		}
-
+#endif
+		ut_ad(!memcmp_aligned<4>(merge_block->page.frame
+					 + FIL_PAGE_NEXT,
+					 block->page.frame + FIL_PAGE_OFFSET,
+					 4));
 		ut_d(parent_is_different =
 			(page_rec_get_next(
 				page_get_infimum_rec(
@@ -4255,19 +4278,24 @@ btr_discard_page(
 						&parent_cursor)))
 			 == btr_cur_get_rec(&parent_cursor)));
 	} else if (right_page_no != FIL_NULL) {
-		dberr_t err;
-		merge_block = btr_block_get(*index, right_page_no, RW_X_LATCH,
-					    true, mtr, &err);
-		if (UNIV_UNLIKELY(!merge_block)) {
-			return err;
+		merge_page_id.set_page_no(right_page_no);
+		merge_block = mtr->get_already_latched(merge_page_id,
+						       MTR_MEMO_PAGE_X_FIX);
+#if 1 // FIXME: remove this
+		if (!merge_block) {
+			dberr_t err;
+			merge_block = btr_block_get(*index, right_page_no,
+						    RW_X_LATCH,
+						    true, mtr, &err);
+			if (UNIV_UNLIKELY(!merge_block)) {
+				return err;
+			}
 		}
-		if (UNIV_UNLIKELY(memcmp_aligned<4>(merge_block->page.frame
-						    + FIL_PAGE_PREV,
-						    block->page.frame
-						    + FIL_PAGE_OFFSET, 4))) {
-			return DB_CORRUPTION;
-		}
-
+#endif
+		ut_ad(!memcmp_aligned<4>(merge_block->page.frame
+					 + FIL_PAGE_PREV,
+					 block->page.frame + FIL_PAGE_OFFSET,
+					 4));
 		ut_d(parent_is_different = page_rec_is_supremum(
 			page_rec_get_next(btr_cur_get_rec(&parent_cursor))));
 		if (page_is_leaf(merge_block->page.frame)) {

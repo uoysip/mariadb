@@ -233,7 +233,7 @@ func_exit:
 	if (err == DB_SUCCESS && node->rec_type == TRX_UNDO_INSERT_METADATA) {
 		/* When rolling back the very first instant ADD COLUMN
 		operation, reset the root page to the basic state. */
-		err = btr_reset_instant(*index, true, &mtr);
+		btr_reset_instant(*index, true, &mtr);
 	}
 
 	btr_pcur_commit_specify_mtr(&node->pcur, &mtr);

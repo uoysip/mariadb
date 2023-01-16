@@ -136,6 +136,13 @@ struct mtr_t {
       : nullptr;
   }
 
+  /** Retrieve a page that has already been latched.
+  @param id    page identifier
+  @param type  page latch type
+  @return block */
+  buf_block_t *get_already_latched(const page_id_t id, mtr_memo_type_t type)
+    const;
+
   /** @return if we are about to make a clean buffer block dirty */
   static bool is_block_dirtied(const buf_page_t &b)
   {
