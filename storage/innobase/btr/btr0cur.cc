@@ -2223,12 +2223,6 @@ dberr_t btr_cur_t::open_leaf(bool first, dict_index_t *index,
 
   lock_intention= btr_cur_get_and_clear_intention(&latch_mode);
 
-  /* This function doesn't need to lock left page of the leaf page */
-  if (latch_mode == BTR_SEARCH_PREV)
-    latch_mode= BTR_SEARCH_LEAF;
-  else if (latch_mode == BTR_MODIFY_PREV)
-    latch_mode= BTR_MODIFY_LEAF;
-
   /* Store the position of the tree latch we push to mtr so that we
   know how to release it when we have latched the leaf node */
 
@@ -2237,12 +2231,8 @@ dberr_t btr_cur_t::open_leaf(bool first, dict_index_t *index,
   rw_lock_type_t upper_rw_latch= RW_X_LATCH;
   ulint node_ptr_max_size= 0;
 
-  switch (latch_mode) {
-  case BTR_CONT_MODIFY_TREE:
-  case BTR_CONT_SEARCH_TREE:
-    abort();
-    break;
-  case BTR_MODIFY_TREE:
+  if (latch_mode == BTR_MODIFY_TREE)
+  {
     node_ptr_max_size= btr_node_ptr_max_size(index);
     /* Most of delete-intended operations are purging. Free blocks
     and read IO bandwidth should be prioritized for them, when the
@@ -2254,17 +2244,29 @@ dberr_t btr_cur_t::open_leaf(bool first, dict_index_t *index,
       mtr_x_lock_index(index, mtr);
     else
       mtr_sx_lock_index(index, mtr);
-    break;
-  default:
+  }
+  else
+  {
+    /* This function doesn't need to lock left page of the leaf page */
+    if (latch_mode == BTR_SEARCH_PREV)
+      latch_mode= BTR_SEARCH_LEAF;
+    else if (latch_mode == BTR_MODIFY_PREV)
+      latch_mode= BTR_MODIFY_LEAF;
+    else
+    {
+      ut_ad(latch_mode != BTR_CONT_MODIFY_TREE);
+      ut_ad(latch_mode != BTR_CONT_SEARCH_TREE);
+    }
     ut_ad(!latch_by_caller ||
           mtr->memo_contains_flagged(&index->lock,
                                      MTR_MEMO_SX_LOCK | MTR_MEMO_S_LOCK));
     upper_rw_latch= RW_S_LATCH;
-    if (latch_by_caller)
-      break;
-    ut_ad(latch_mode != BTR_SEARCH_TREE);
-    savepoint++;
-    mtr_s_lock_index(index, mtr);
+    if (!latch_by_caller)
+    {
+      ut_ad(latch_mode != BTR_SEARCH_TREE);
+      savepoint++;
+      mtr_s_lock_index(index, mtr);
+    }
   }
 
   ut_ad(savepoint == mtr->get_savepoint());
