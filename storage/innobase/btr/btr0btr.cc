@@ -476,7 +476,6 @@ mtr_t::get_already_latched(const page_id_t id, mtr_memo_type_t type) const
         return block;
     }
   }
-  ut_ad("a latched block was not found" == 0);
   return nullptr;
 }
 
@@ -2544,6 +2543,7 @@ btr_attach_half_pages(
 	/* Get the level of the split pages */
 	const ulint level = btr_page_get_level(block->page.frame);
 	ut_ad(level == btr_page_get_level(new_block->page.frame));
+	page_id_t id{block->page.id()};
 
 	/* Get the previous and next pages of page */
 	const uint32_t prev_page_no = btr_page_get_prev(block->page.frame);
@@ -2551,16 +2551,28 @@ btr_attach_half_pages(
 
 	/* for consistency, both blocks should be locked, before change */
 	if (prev_page_no != FIL_NULL && direction == FSP_DOWN) {
-		prev_block = btr_block_get(*index, prev_page_no, RW_X_LATCH,
-					   !level, mtr);
-		ut_ad(!prev_block->page.lock.not_recursive()
-		      || mtr->memo_contains(index->lock, MTR_MEMO_X_LOCK));
+		id.set_page_no(prev_page_no);
+		prev_block = mtr->get_already_latched(id, MTR_MEMO_PAGE_X_FIX);
+#if 1 // TODO: remove this
+		if (!prev_block) {
+			ut_ad(mtr->memo_contains(index->lock,
+						 MTR_MEMO_X_LOCK));
+			prev_block = btr_block_get(*index, prev_page_no,
+						   RW_X_LATCH, !level, mtr);
+		}
+#endif
 	}
 	if (next_page_no != FIL_NULL && direction != FSP_DOWN) {
-		next_block = btr_block_get(*index, next_page_no, RW_X_LATCH,
-					   !level, mtr);
-		ut_ad(!next_block->page.lock.not_recursive()
-		      || mtr->memo_contains(index->lock, MTR_MEMO_X_LOCK));
+		id.set_page_no(next_page_no);
+		next_block = mtr->get_already_latched(id, MTR_MEMO_PAGE_X_FIX);
+#if 1 // TODO: remove this
+		if (!next_block) {
+			ut_ad(mtr->memo_contains(index->lock,
+						 MTR_MEMO_X_LOCK));
+			next_block = btr_block_get(*index, next_page_no,
+						   RW_X_LATCH, !level, mtr);
+		}
+#endif
 	}
 
 	/* Build the node pointer (= node key and page address) for the upper
@@ -3348,56 +3360,54 @@ func_exit:
 dberr_t btr_level_list_remove(const buf_block_t& block,
                               const dict_index_t& index, mtr_t* mtr)
 {
-	ut_ad(mtr->memo_contains_flagged(&block, MTR_MEMO_PAGE_X_FIX));
-	ut_ad(block.zip_size() == index.table->space->zip_size());
-	ut_ad(index.table->space->id == block.page.id().space());
-	/* Get the previous and next page numbers of page */
+  ut_ad(mtr->memo_contains_flagged(&block, MTR_MEMO_PAGE_X_FIX));
+  ut_ad(block.zip_size() == index.table->space->zip_size());
+  ut_ad(index.table->space->id == block.page.id().space());
+  /* Get the previous and next page numbers of page */
+  const uint32_t prev_page_no= btr_page_get_prev(block.page.frame);
+  const uint32_t next_page_no= btr_page_get_next(block.page.frame);
+  page_id_t id{block.page.id()};
+  buf_block_t *prev= nullptr, *next;
+  dberr_t err;
 
-	const page_t* page = block.page.frame;
-	const uint32_t	prev_page_no = btr_page_get_prev(page);
-	const uint32_t	next_page_no = btr_page_get_next(page);
+  /* Update page links of the level */
+  if (prev_page_no != FIL_NULL)
+  {
+    id.set_page_no(prev_page_no);
+    prev= mtr->get_already_latched(id, MTR_MEMO_PAGE_X_FIX);
+#if 1 // TODO: remove this
+    if (!prev)
+    {
+      ut_ad(mtr->memo_contains(index.lock, MTR_MEMO_X_LOCK));
+      prev= btr_block_get(index, id.page_no(), RW_X_LATCH,
+                          page_is_leaf(block.page.frame), mtr, &err);
+      if (UNIV_UNLIKELY(!prev))
+        return err;
+    }
+#endif
+  }
 
-	/* Update page links of the level */
-	dberr_t err;
+  if (next_page_no != FIL_NULL)
+  {
+    id.set_page_no(next_page_no);
+    next= mtr->get_already_latched(id, MTR_MEMO_PAGE_X_FIX);
+#if 1 // TODO: remove this
+    if (!next)
+    {
+      ut_ad(mtr->memo_contains(index.lock, MTR_MEMO_X_LOCK));
+      next= btr_block_get(index, id.page_no(), RW_X_LATCH,
+                          page_is_leaf(block.page.frame), mtr, &err);
+      if (UNIV_UNLIKELY(!next))
+        return err;
+    }
+#endif
+    btr_page_set_prev(next, prev_page_no, mtr);
+  }
 
-	if (prev_page_no != FIL_NULL) {
-		buf_block_t*	prev_block = btr_block_get(
-			index, prev_page_no, RW_X_LATCH, page_is_leaf(page),
-			mtr, &err);
-		if (UNIV_UNLIKELY(!prev_block)) {
-			return err;
-		}
-		ut_ad(!prev_block->page.lock.not_recursive()
-		      || mtr->memo_contains(index.lock, MTR_MEMO_X_LOCK));
-		if (UNIV_UNLIKELY(memcmp_aligned<4>(prev_block->page.frame
-						    + FIL_PAGE_NEXT,
-						    page + FIL_PAGE_OFFSET,
-						    4))) {
-			return DB_CORRUPTION;
-		}
-		btr_page_set_next(prev_block, next_page_no, mtr);
-	}
+  if (prev)
+    btr_page_set_next(prev, next_page_no, mtr);
 
-	if (next_page_no != FIL_NULL) {
-		buf_block_t*	next_block = btr_block_get(
-			index, next_page_no, RW_X_LATCH, page_is_leaf(page),
-			mtr, &err);
-
-		if (UNIV_UNLIKELY(!next_block)) {
-			return err;
-		}
-		ut_ad(!next_block->page.lock.not_recursive()
-		      || mtr->memo_contains(index.lock, MTR_MEMO_X_LOCK));
-		if (UNIV_UNLIKELY(memcmp_aligned<4>(next_block->page.frame
-						    + FIL_PAGE_PREV,
-						    page + FIL_PAGE_OFFSET,
-						    4))) {
-			return DB_CORRUPTION;
-		}
-		btr_page_set_prev(next_block, prev_page_no, mtr);
-	}
-
-	return DB_SUCCESS;
+  return DB_SUCCESS;
 }
 
 /*************************************************************//**
