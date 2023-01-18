@@ -753,10 +753,8 @@ btr_page_get_father_node_ptr_for_validate(
 	dict_index_t* index = btr_cur_get_index(cursor);
 	ut_ad(!dict_index_is_spatial(index));
 
-	ut_ad(srv_read_only_mode
-	      || mtr->memo_contains_flagged(&index->lock, MTR_MEMO_X_LOCK
-					    | MTR_MEMO_SX_LOCK));
-
+	ut_ad(mtr->memo_contains_flagged(&index->lock, MTR_MEMO_X_LOCK
+					 | MTR_MEMO_SX_LOCK));
 	ut_ad(dict_index_get_page(index) != page_no);
 
 	const auto level = btr_page_get_level(btr_cur_get_page(cursor));
@@ -774,8 +772,10 @@ btr_page_get_father_node_ptr_for_validate(
 	}
 
 	const rec_t* node_ptr = btr_cur_get_rec(cursor);
+#if 0
 	ut_ad(!btr_cur_get_block(cursor)->page.lock.not_recursive()
 	      || mtr->memo_contains(index->lock, MTR_MEMO_X_LOCK));
+#endif
 
 	offsets = rec_get_offsets(node_ptr, index, offsets, 0,
 				  ULINT_UNDEFINED, &heap);
@@ -2445,9 +2445,11 @@ btr_insert_on_non_leaf_level(
 	}
 
 	ut_ad(cursor.flag == BTR_CUR_BINARY);
+#if 0
 	ut_ad(!btr_cur_get_block(&cursor)->page.lock.not_recursive()
 	      || index->is_spatial()
 	      || mtr->memo_contains(index->lock, MTR_MEMO_X_LOCK));
+#endif
 
 	if (UNIV_LIKELY(err == DB_SUCCESS)) {
 		err = btr_cur_optimistic_insert(flags,
@@ -2555,8 +2557,10 @@ btr_attach_half_pages(
 		prev_block = mtr->get_already_latched(id, MTR_MEMO_PAGE_X_FIX);
 #if 1 // TODO: remove this
 		if (!prev_block) {
+# if 0
 			ut_ad(mtr->memo_contains(index->lock,
 						 MTR_MEMO_X_LOCK));
+# endif
 			prev_block = btr_block_get(*index, prev_page_no,
 						   RW_X_LATCH, !level, mtr);
 		}
@@ -2567,8 +2571,10 @@ btr_attach_half_pages(
 		next_block = mtr->get_already_latched(id, MTR_MEMO_PAGE_X_FIX);
 #if 1 // TODO: remove this
 		if (!next_block) {
+# if 0
 			ut_ad(mtr->memo_contains(index->lock,
 						 MTR_MEMO_X_LOCK));
+# endif
 			next_block = btr_block_get(*index, next_page_no,
 						   RW_X_LATCH, !level, mtr);
 		}
@@ -3378,7 +3384,9 @@ dberr_t btr_level_list_remove(const buf_block_t& block,
 #if 1 // TODO: remove this
     if (!prev)
     {
+# if 0
       ut_ad(mtr->memo_contains(index.lock, MTR_MEMO_X_LOCK));
+# endif
       prev= btr_block_get(index, id.page_no(), RW_X_LATCH,
                           page_is_leaf(block.page.frame), mtr, &err);
       if (UNIV_UNLIKELY(!prev))
@@ -3394,7 +3402,9 @@ dberr_t btr_level_list_remove(const buf_block_t& block,
 #if 1 // TODO: remove this
     if (!next)
     {
+# if 0
       ut_ad(mtr->memo_contains(index.lock, MTR_MEMO_X_LOCK));
+# endif
       next= btr_block_get(index, id.page_no(), RW_X_LATCH,
                           page_is_leaf(block.page.frame), mtr, &err);
       if (UNIV_UNLIKELY(!next))

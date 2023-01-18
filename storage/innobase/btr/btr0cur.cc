@@ -1281,9 +1281,6 @@ dberr_t btr_cur_t::search_leaf(const dtuple_t *tuple, page_cur_mode_t mode,
       ut_ad(mtr->memo_contains_flagged(&index()->lock, MTR_MEMO_X_LOCK));
       break;
     }
-#if 1 // Work around MDEV-29835 hangs
-    mtr_x_lock_index(index(), mtr);
-#else
     if (lock_intention == BTR_INTENTION_DELETE && buf_pool.n_pend_reads &&
         trx_sys.history_size_approx() > BTR_CUR_FINE_HISTORY_LENGTH)
       /* Most delete-intended operations are due to the purge of history.
@@ -1291,7 +1288,6 @@ dberr_t btr_cur_t::search_leaf(const dtuple_t *tuple, page_cur_mode_t mode,
       mtr_x_lock_index(index(), mtr);
     else
       mtr_sx_lock_index(index(), mtr);
-#endif
     break;
 #ifdef UNIV_DEBUG
   case BTR_CONT_MODIFY_TREE:
@@ -1956,9 +1952,6 @@ dberr_t btr_cur_search_to_nth_level(ulint level,
 	case BTR_MODIFY_TREE:
 		node_ptr_max_size = btr_node_ptr_max_size(index);
 
-#if 1 // Work around MDEV-29835 hangs
-		mtr_x_lock_index(index, mtr);
-#else
 		/* Most of delete-intended operations are purging.
 		Free blocks and read IO bandwidth should be prior
 		for them, when the history list is glowing huge. */
@@ -1970,7 +1963,7 @@ dberr_t btr_cur_search_to_nth_level(ulint level,
 		} else {
 			mtr_sx_lock_index(index, mtr);
 		}
-#endif
+
 		upper_rw_latch = RW_X_LATCH;
 		break;
 	case BTR_CONT_MODIFY_TREE:
