@@ -552,7 +552,7 @@ btr_page_alloc_low(
   }
   else
   {
-    mtr->u_lock_register(savepoint);
+    mtr->lock_register(savepoint, MTR_MEMO_PAGE_SX_FIX);
     root->page.lock.u_lock();
 #ifdef BTR_CUR_HASH_ADAPT
     btr_search_drop_page_hash_index(root, true);
@@ -663,7 +663,7 @@ dberr_t btr_page_free(dict_index_t* index, buf_block_t* block, mtr_t* mtr,
     }
     else
     {
-      mtr->u_lock_register(savepoint);
+      mtr->lock_register(savepoint, MTR_MEMO_PAGE_SX_FIX);
       root->page.lock.u_lock();
 #ifdef BTR_CUR_HASH_ADAPT
       btr_search_drop_page_hash_index(root, true);

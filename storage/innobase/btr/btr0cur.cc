@@ -237,7 +237,7 @@ s_latch_block:
 #ifdef BTR_CUR_HASH_ADAPT
 		btr_search_drop_page_hash_index(block, true);
 #endif
-		mtr->s_lock_register(block_savepoint);
+		mtr->lock_register(block_savepoint, MTR_MEMO_PAGE_S_FIX);
 		return;
 	case BTR_MODIFY_TREE:
 		/* It is exclusive for other operations which calls
@@ -1573,7 +1573,6 @@ dberr_t btr_cur_t::search_leaf(const dtuple_t *tuple, page_cur_mode_t mode,
   switch (latch_mode) {
   default:
     break;
-  case BTR_SEARCH_PREV:
   case BTR_MODIFY_PREV:
     /* This is almost exclusively for ibuf_insert(), but also for
     btr_pcur_move_to_prev(); the latter is not exercised by mtr */
@@ -1581,22 +1580,42 @@ dberr_t btr_cur_t::search_leaf(const dtuple_t *tuple, page_cur_mode_t mode,
     /* Latch the previous page if the node pointer is the leftmost of the
     current page. */
     ut_ad(block == mtr->at_savepoint(block_savepoint));
+    block->page.lock.x_lock();
+
+    if (height == 1 && page_has_prev(page) &&
+        page_rec_is_first(page_cur.rec, page))
+    {
+      block->page.lock.x_unlock();
+      if (!btr_block_get(*index(), btr_page_get_prev(page), RW_X_LATCH, false,
+                         mtr, &err))
+        goto func_exit;
+      block->page.lock.x_lock();
+    }
+    static_assert(mtr_memo_type_t(BTR_MODIFY_PREV & ~4) == MTR_MEMO_PAGE_X_FIX,
+                  "");
+    static_assert(mtr_memo_type_t(BTR_SEARCH_PREV & ~4) == MTR_MEMO_PAGE_S_FIX,
+                  "");
+    goto latched;
+  case BTR_SEARCH_PREV:
+    /* Latch the previous page if the node pointer is the leftmost of the
+    current page. */
+    ut_ad(block == mtr->at_savepoint(block_savepoint));
     block->page.lock.s_lock();
-#ifdef BTR_CUR_HASH_ADAPT
-    btr_search_drop_page_hash_index(block, true);
-#endif
-    mtr->s_lock_register(block_savepoint);
 
     if (height == 1 && page_has_prev(page) &&
         page_rec_is_first(page_cur.rec, page))
     {
       block->page.lock.s_unlock();
-      buf_block_t *left= btr_block_get(*index(), btr_page_get_prev(page),
-                                       RW_S_LATCH, false, mtr, &err);
-      block->page.lock.s_lock();
-      if (!left)
+      if (!btr_block_get(*index(), btr_page_get_prev(page), RW_S_LATCH, false,
+                         mtr, &err))
         goto func_exit;
+      block->page.lock.s_lock();
     }
+  latched:
+    mtr->lock_register(block_savepoint, mtr_memo_type_t(latch_mode & ~4));
+#ifdef BTR_CUR_HASH_ADAPT
+    btr_search_drop_page_hash_index(block, true);
+#endif
     break;
   case BTR_MODIFY_TREE:
     if (btr_cur_need_opposite_intention(page, lock_intention, page_cur.rec))

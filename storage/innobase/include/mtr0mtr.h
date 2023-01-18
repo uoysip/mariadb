@@ -392,19 +392,12 @@ public:
   void upgrade_buffer_fix(ulint savepoint, rw_lock_type_t rw_latch);
 
   /** Register a page latch on a previously buffer-fixed block. */
-  void u_lock_register(ulint savepoint)
+  void lock_register(ulint savepoint, mtr_memo_type_t type)
   {
     mtr_memo_slot_t &slot= m_memo[savepoint];
     ut_ad(slot.type == MTR_MEMO_BUF_FIX);
-    slot.type= MTR_MEMO_PAGE_SX_FIX;
-  }
-
-  /** Register a page latch on a previously buffer-fixed block. */
-  void s_lock_register(ulint savepoint)
-  {
-    mtr_memo_slot_t &slot= m_memo[savepoint];
-    ut_ad(slot.type == MTR_MEMO_BUF_FIX);
-    slot.type= MTR_MEMO_PAGE_S_FIX;
+    ut_ad(type <= MTR_MEMO_PAGE_SX_FIX);
+    slot.type= type;
   }
 
   /** Upgrade U locks on a block to X */

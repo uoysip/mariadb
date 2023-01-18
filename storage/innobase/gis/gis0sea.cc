@@ -681,7 +681,7 @@ dberr_t rtr_search_to_nth_level(ulint level, const dtuple_t *tuple,
     }
 
     ut_ad(block == mtr->at_savepoint(block_savepoint));
-    mtr->s_lock_register(block_savepoint);
+    mtr->lock_register(block_savepoint, MTR_MEMO_PAGE_S_FIX);
     block->page.lock.s_lock();
   }
 
