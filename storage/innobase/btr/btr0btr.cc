@@ -488,6 +488,25 @@ static buf_block_t *btr_get_latched_root(const dict_index_t &index, mtr_t *mtr)
                                   MTR_MEMO_PAGE_SX_FIX);
 }
 
+/** Fet an index page that should have been already latched in the
+mini-transaction. */
+static buf_block_t *
+btr_block_reget(mtr_t *mtr, const dict_index_t &index,
+                const page_id_t id, rw_lock_type_t rw_latch,
+                dberr_t *err)
+{
+  if (buf_block_t *block=
+      mtr->get_already_latched(id, mtr_memo_type_t(rw_latch)))
+  {
+    *err= DB_SUCCESS;
+    return block;
+  }
+
+  /* MDEV-29385 FIXME: Acquire the page latch upfront. */
+  ut_ad(mtr->memo_contains_flagged(&index.lock, MTR_MEMO_X_LOCK));
+  return btr_block_get(index, id.page_no(), rw_latch, true, mtr, err);
+}
+
 /**************************************************************//**
 Allocates a new file page to be used in an ibuf tree. Takes the page from
 the free list of the tree, which must contain pages!
@@ -2062,19 +2081,15 @@ btr_root_raise_and_insert(
 	page_cursor->block = new_block;
 	page_cursor->index = index;
 
-	if (tuple) {
-		ut_ad(dtuple_check_typed(tuple));
-		/* Reposition the cursor to the child node */
-		ulint low_match = 0, up_match = 0;
+	ut_ad(dtuple_check_typed(tuple));
+	/* Reposition the cursor to the child node */
+	ulint low_match = 0, up_match = 0;
 
-		if (page_cur_search_with_match(tuple, PAGE_CUR_LE,
-					       &up_match, &low_match,
-					       page_cursor, nullptr)) {
-			*err = DB_CORRUPTION;
-			return nullptr;
-		}
-	} else {
-		page_cursor->rec = page_get_infimum_rec(new_block->page.frame);
+	if (page_cur_search_with_match(tuple, PAGE_CUR_LE,
+				       &up_match, &low_match,
+				       page_cursor, nullptr)) {
+		*err = DB_CORRUPTION;
+		return nullptr;
 	}
 
 	/* Split the child and insert tuple */
@@ -4264,14 +4279,27 @@ btr_discard_page(
 	page_id_t merge_page_id{block->page.id()};
 
 	ut_d(bool parent_is_different = false);
+	dberr_t err;
 	if (left_page_no != FIL_NULL) {
 		merge_page_id.set_page_no(left_page_no);
-		merge_block = mtr->get_already_latched(merge_page_id,
-						       MTR_MEMO_PAGE_X_FIX);
+		merge_block = btr_block_reget(mtr, *index, merge_page_id,
+					      RW_X_LATCH, &err);
+		if (UNIV_UNLIKELY(!merge_block)) {
+			return err;
+		}
+#if 0 /* MDEV-29385 FIXME: Acquire the page latch upfront. */
 		ut_ad(!memcmp_aligned<4>(merge_block->page.frame
 					 + FIL_PAGE_NEXT,
 					 block->page.frame + FIL_PAGE_OFFSET,
 					 4));
+#else
+		if (UNIV_UNLIKELY(memcmp_aligned<4>(merge_block->page.frame
+						    + FIL_PAGE_NEXT,
+						    block->page.frame
+						    + FIL_PAGE_OFFSET, 4))) {
+			return DB_CORRUPTION;
+		}
+#endif
 		ut_d(parent_is_different =
 			(page_rec_get_next(
 				page_get_infimum_rec(
@@ -4280,12 +4308,24 @@ btr_discard_page(
 			 == btr_cur_get_rec(&parent_cursor)));
 	} else if (right_page_no != FIL_NULL) {
 		merge_page_id.set_page_no(right_page_no);
-		merge_block = mtr->get_already_latched(merge_page_id,
-						       MTR_MEMO_PAGE_X_FIX);
+		merge_block = btr_block_reget(mtr, *index, merge_page_id,
+                                              RW_X_LATCH, &err);
+		if (UNIV_UNLIKELY(!merge_block)) {
+			return err;
+		}
+#if 0 /* MDEV-29385 FIXME: Acquire the page latch upfront. */
 		ut_ad(!memcmp_aligned<4>(merge_block->page.frame
 					 + FIL_PAGE_PREV,
 					 block->page.frame + FIL_PAGE_OFFSET,
 					 4));
+#else
+		if (UNIV_UNLIKELY(memcmp_aligned<4>(merge_block->page.frame
+						    + FIL_PAGE_PREV,
+						    block->page.frame
+						    + FIL_PAGE_OFFSET, 4))) {
+			return DB_CORRUPTION;
+		}
+#endif
 		ut_d(parent_is_different = page_rec_is_supremum(
 			page_rec_get_next(btr_cur_get_rec(&parent_cursor))));
 		if (page_is_leaf(merge_block->page.frame)) {
@@ -4327,13 +4367,10 @@ btr_discard_page(
 	}
 
 #ifdef UNIV_ZIP_DEBUG
-	{
-		page_zip_des_t*	merge_page_zip
-			= buf_block_get_page_zip(merge_block);
-		ut_a(!merge_page_zip
-		     || page_zip_validate(merge_page_zip,
-					  merge_block->page.frame, index));
-	}
+	if (page_zip_des_t* merge_page_zip
+	    = buf_block_get_page_zip(merge_block));
+		ut_a(page_zip_validate(merge_page_zip,
+				       merge_block->page.frame, index));
 #endif /* UNIV_ZIP_DEBUG */
 
 	if (index->has_locking()) {
@@ -4352,7 +4389,7 @@ btr_discard_page(
 	}
 
 	/* Free the file page */
-	dberr_t err = btr_page_free(index, block, mtr);
+	err = btr_page_free(index, block, mtr);
 
 	if (err == DB_SUCCESS) {
 		/* btr_check_node_ptr() needs parent block latched.
