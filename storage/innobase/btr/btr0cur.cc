@@ -1369,7 +1369,7 @@ dberr_t btr_cur_t::search_leaf(const dtuple_t *tuple, page_cur_mode_t mode,
       goto func_exit;
     }
 
-    if (rw_latch == RW_NO_LATCH && !index()->is_ibuf())
+    if (rw_latch == RW_NO_LATCH)
       btr_cur_latch_leaves(block_savepoint, latch_mode, this, mtr);
 
     if (latch_mode != BTR_MODIFY_TREE)
