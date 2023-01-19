@@ -486,8 +486,6 @@ dberr_t rtr_search_to_nth_level(ulint level, const dtuple_t *tuple,
   page_cur_mode_t page_mode;
   page_cur_mode_t search_mode= PAGE_CUR_UNSUPP;
 
-  ulint leftmost_from_level= 0;
-  ulint prev_level= 0;
   bool mbr_adj= false;
   bool found= false;
   dict_index_t *const index= cur->index();
@@ -547,10 +545,12 @@ dberr_t rtr_search_to_nth_level(ulint level, const dtuple_t *tuple,
     break;
   default:
     ut_ad(latch_mode != BTR_CONT_SEARCH_TREE);
+    ut_ad(latch_mode != BTR_MODIFY_PREV);
+    ut_ad(latch_mode != BTR_SEARCH_PREV);
     if (!latch_by_caller)
       mtr_s_lock_index(index, mtr);
     upper_rw_latch= root_leaf_rw_latch= RW_S_LATCH;
-    if (latch_mode == BTR_MODIFY_LEAF || latch_mode == BTR_MODIFY_PREV)
+    if (latch_mode == BTR_MODIFY_LEAF)
       root_leaf_rw_latch= RW_X_LATCH;
   }
 
@@ -596,12 +596,10 @@ dberr_t rtr_search_to_nth_level(ulint level, const dtuple_t *tuple,
   if (height)
   {
     /* We are about to fetch the root or a non-leaf page. */
-    if ((latch_mode != BTR_MODIFY_TREE || height == level) &&
-        !prev_level) {
+    if (latch_mode != BTR_MODIFY_TREE || height == level)
       /* If doesn't have SX or X latch of index,
          each page should be latched before reading. */
       rw_latch= upper_rw_latch;
-    }
   }
   else if (latch_mode <= BTR_MODIFY_LEAF)
     rw_latch= latch_mode;
@@ -623,39 +621,6 @@ dberr_t rtr_search_to_nth_level(ulint level, const dtuple_t *tuple,
       cur->rtr_info->mbr_adj= true;
 
     return err;
-  }
-
-  if (height && prev_level)
-  {
-    /* also latch left sibling */
-    ut_ad(rw_latch == RW_NO_LATCH);
-
-    rw_latch= upper_rw_latch;
-
-    /* Because we are holding index->lock, no page splits
-       or merges may run concurrently, and we may read
-       FIL_PAGE_PREV from a buffer-fixed, unlatched page. */
-    uint32_t left_page_no= btr_page_get_prev(block->page.frame);
-
-    if (left_page_no != FIL_NULL) {
-      buf_block_t* get_block=
-        buf_page_get_gen(page_id_t(page_id.space(), left_page_no),
-                         zip_size, rw_latch, NULL, buf_mode, mtr, &err);
-      if (!get_block)
-      {
-        if (err == DB_DECRYPTION_FAILED)
-          btr_decryption_failed(*index);
-        goto func_exit;
-      }
-
-      /* BTR_MODIFY_TREE doesn't update prev/next_page_no,
-         without their parent page's lock. So, not needed to
-         retry here, because we have the parent page's lock. */
-    }
-
-    ut_ad(block == mtr->at_savepoint(block_savepoint));
-    mtr->lock_register(block_savepoint, MTR_MEMO_PAGE_S_FIX);
-    block->page.lock.s_lock();
   }
 
   const page_t *page= buf_block_get_frame(block);
@@ -892,57 +857,6 @@ dberr_t rtr_search_to_nth_level(ulint level, const dtuple_t *tuple,
       ut_ad(upper_rw_latch == RW_X_LATCH);
       for (auto i= root_savepoint, n= mtr->get_savepoint(); i < n; i++)
         mtr->x_latch_at_savepoint(i, mtr->at_savepoint(i));
-    }
-
-    /* We should consider prev_page of parent page, if the node_ptr is
-    the leftmost of the page. because BTR_SEARCH_PREV and
-    BTR_MODIFY_PREV latches prev_page of the leaf page. */
-    if (!prev_level &&
-        (latch_mode == BTR_SEARCH_PREV || latch_mode == BTR_MODIFY_PREV))
-    {
-      /* block should be latched for consistent
-      btr_page_get_prev() */
-      ut_ad(mtr->memo_contains_flagged(block, MTR_MEMO_PAGE_S_FIX |
-                                       MTR_MEMO_PAGE_X_FIX));
-      if (page_has_prev(page) && page_rec_is_first(node_ptr, page))
-      {
-        if (leftmost_from_level == 0)
-          leftmost_from_level= height + 1;
-
-        if (leftmost_from_level && height == 0) {
-          /* Backtrack to leftmost_from_level. */
-          prev_level= leftmost_from_level;
-          auto s= root_savepoint + cur->tree_height - leftmost_from_level - 1;
-          buf_block_t *b= mtr->at_savepoint(s);
-          ut_ad(btr_page_get_level(b->page.frame) == leftmost_from_level);
-          page_id= b->page.id();
-          mtr->rollback_to_savepoint(s);
-
-          height= leftmost_from_level;
-
-          /* replay up_match, low_match */
-          up_match= 0;
-          low_match= 0;
-          rtr_info_t *rtr_info= page_mode >= PAGE_CUR_CONTAIN
-            ? cur->rtr_info : nullptr;
-
-          for (auto i= root_savepoint; i < s; i++)
-          {
-            cur->page_cur.block= mtr->at_savepoint(i);
-            if (page_cur_search_with_match(tuple, page_mode,
-                                           &up_match, &low_match,
-                                           &cur->page_cur, rtr_info))
-            {
-              err= DB_CORRUPTION;
-              goto func_exit;
-            }
-          }
-
-          goto search_loop;
-        }
-      }
-      else
-        leftmost_from_level= 0;
     }
 
     /* Go to the child node */

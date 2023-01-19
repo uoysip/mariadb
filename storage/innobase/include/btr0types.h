@@ -65,9 +65,11 @@ enum btr_latch_mode {
 	BTR_MODIFY_ROOT_AND_LEAF = RW_SX_LATCH,
 	/** Obtain no latches. */
 	BTR_NO_LATCHES = RW_NO_LATCH,
-	/** Search the previous record. */
+	/** Search the previous record.
+	Used in btr_pcur_move_backward_from_page(). */
 	BTR_SEARCH_PREV = 4 | BTR_SEARCH_LEAF,
-	/** Modify the previous record. */
+	/** Modify the previous record.
+	Used in btr_pcur_move_backward_from_page() and ibuf_insert(). */
 	BTR_MODIFY_PREV = 4 | BTR_MODIFY_LEAF,
 	/** Start modifying the entire B-tree. */
 	BTR_MODIFY_TREE = 8 | BTR_MODIFY_LEAF,
