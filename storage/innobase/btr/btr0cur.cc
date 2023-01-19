@@ -219,24 +219,17 @@ btr_cur_latch_leaves(
 	switch (latch_mode) {
 		uint32_t	left_page_no;
 		uint32_t	right_page_no;
-	default:
+        default:
+		ut_ad(latch_mode == BTR_CONT_MODIFY_TREE);
+		ut_ad(cursor->index()->is_spatial());
 		break;
-	case BTR_MODIFY_LEAF:
-x_latch_block:
-		mtr->x_latch_at_savepoint(block_savepoint, block);
-#ifdef BTR_CUR_HASH_ADAPT
-		btr_search_drop_page_hash_index(block, true);
-#endif
-		return;
 	case BTR_SEARCH_LEAF:
-s_latch_block:
-		ut_ad(block == mtr->at_savepoint(block_savepoint));
 		block->page.lock.s_lock();
 #ifdef BTR_CUR_HASH_ADAPT
 		btr_search_drop_page_hash_index(block, true);
 #endif
 		mtr->lock_register(block_savepoint, MTR_MEMO_PAGE_S_FIX);
-		return;
+		break;
 	case BTR_MODIFY_TREE:
 		/* It is exclusive for other operations which calls
 		btr_page_set_prev() */
@@ -262,16 +255,10 @@ s_latch_block:
 			btr_block_get(*cursor->index(), right_page_no,
 				      RW_X_LATCH, true, mtr);
 		}
+		break;
 
-		return;
-
-	case BTR_SEARCH_PREV:
 	case BTR_MODIFY_PREV:
-		static_assert(BTR_SEARCH_PREV & BTR_SEARCH_LEAF, "");
 		static_assert(BTR_MODIFY_PREV & BTR_MODIFY_LEAF, "");
-		static_assert((BTR_SEARCH_PREV ^ BTR_MODIFY_PREV)
-			      == (RW_S_LATCH ^ RW_X_LATCH), "");
-
 		/* Because we are holding index->lock, no page splits
 		or merges may run concurrently, and we may read
 		FIL_PAGE_PREV from a buffer-fixed, unlatched page. */
@@ -283,17 +270,13 @@ s_latch_block:
 				mode, true, mtr);
 		}
 
-		if (latch_mode == BTR_MODIFY_PREV) {
-			goto x_latch_block;
-		} else {
-			goto s_latch_block;
-		}
-	case BTR_CONT_MODIFY_TREE:
-		ut_ad(cursor->index()->is_spatial());
-		return;
+		/* fall through */
+	case BTR_MODIFY_LEAF:
+		mtr->x_latch_at_savepoint(block_savepoint, block);
+#ifdef BTR_CUR_HASH_ADAPT
+		btr_search_drop_page_hash_index(block, true);
+#endif
 	}
-
-	MY_ASSERT_UNREACHABLE();
 }
 
 /** Load the instant ALTER TABLE metadata from the clustered index

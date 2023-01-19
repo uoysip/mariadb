@@ -833,14 +833,7 @@ btr_page_get_parent(
           i= 0; // FIXME: require all pages to be latched in order!
           continue;
         }
-        if (!block->page.lock.have_x())
-        {
-          ut_ad(index->lock.have_x());
-          if (block->page.lock.x_lock_upgraded())
-            mtr->page_lock_upgrade(*block);
-          else
-            mtr->x_latch_at_savepoint(i, block);
-        }
+        ut_ad(block->page.lock.have_x());
         return offsets;
       }
 
@@ -1155,12 +1148,10 @@ rollback of TRX_UNDO_EMPTY. The BTR_SEG_LEAF is freed and reinitialized.
 TRANSACTIONAL_TARGET
 dberr_t dict_index_t::clear(que_thr_t *thr)
 {
+  ut_ad(!table->is_temporary());
   mtr_t mtr;
   mtr.start();
-  if (table->is_temporary())
-    mtr.set_log_mode(MTR_LOG_NO_REDO);
-  else
-    set_modified(mtr);
+  set_modified(mtr);
   mtr_sx_lock_index(this, &mtr);
 
   dberr_t err;
@@ -1921,11 +1912,6 @@ btr_root_raise_and_insert(
 	}
 
 	/* Copy the records from root to the new page one by one. */
-	dberr_t e;
-	if (!err) {
-		err = &e;
-	}
-
 	if (0
 #ifdef UNIV_ZIP_COPY
 	    || new_page_zip
@@ -2077,9 +2063,7 @@ btr_root_raise_and_insert(
 		if (page_cur_search_with_match(tuple, PAGE_CUR_LE,
 					       &up_match, &low_match,
 					       page_cursor, nullptr)) {
-			if (err) {
-				*err = DB_CORRUPTION;
-			}
+			*err = DB_CORRUPTION;
 			return nullptr;
 		}
 	} else {

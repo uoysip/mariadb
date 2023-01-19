@@ -240,7 +240,7 @@ btr_root_raise_and_insert(
 	ulint		n_ext,	/*!< in: number of externally stored columns */
 	mtr_t*		mtr,	/*!< in: mtr */
 	dberr_t*	err)	/*!< out: error code */
-	MY_ATTRIBUTE((warn_unused_result));
+	MY_ATTRIBUTE((nonnull, warn_unused_result));
 /*************************************************************//**
 Reorganizes an index page.
 
