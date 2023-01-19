@@ -215,7 +215,6 @@ btr_cur_latch_leaves(
 		latch_mode & (RW_X_LATCH | RW_S_LATCH));
 	static_assert(ulint{RW_S_LATCH} == ulint{BTR_SEARCH_LEAF}, "");
 	static_assert(ulint{RW_X_LATCH} == ulint{BTR_MODIFY_LEAF}, "");
-	static_assert(BTR_SEARCH_LEAF & BTR_SEARCH_TREE, "");
 
 	switch (latch_mode) {
 		uint32_t	left_page_no;
@@ -230,7 +229,6 @@ x_latch_block:
 #endif
 		return;
 	case BTR_SEARCH_LEAF:
-	case BTR_SEARCH_TREE:
 s_latch_block:
 		ut_ad(block == mtr->at_savepoint(block_savepoint));
 		block->page.lock.s_lock();
@@ -808,7 +806,6 @@ static rw_lock_type_t btr_cur_latch_for_root_leaf(btr_latch_mode latch_mode)
   static_assert(int{BTR_MODIFY_LEAF} == int{RW_X_LATCH}, "");
   static_assert(int{BTR_MODIFY_ROOT_AND_LEAF} == int{RW_SX_LATCH}, "");
   static_assert(BTR_SEARCH_PREV == (BTR_SEARCH_LEAF | 4), "");
-  static_assert(BTR_SEARCH_TREE == (BTR_SEARCH_LEAF | 8), "");
   static_assert(BTR_CONT_SEARCH_TREE == (BTR_SEARCH_LEAF | 12), "");
   static_assert(BTR_CONT_MODIFY_TREE == (BTR_MODIFY_LEAF | 12), "");
 
@@ -1226,7 +1223,6 @@ dberr_t btr_cur_t::search_leaf(const dtuple_t *tuple, page_cur_mode_t mode,
 
   ut_ad(!latch_by_caller
         || latch_mode == BTR_SEARCH_LEAF
-        || latch_mode == BTR_SEARCH_TREE
         || latch_mode == BTR_MODIFY_LEAF
         || latch_mode == BTR_MODIFY_TREE
         || latch_mode == BTR_MODIFY_ROOT_AND_LEAF);
@@ -1300,10 +1296,7 @@ dberr_t btr_cur_t::search_leaf(const dtuple_t *tuple, page_cur_mode_t mode,
     /* fall through */
   default:
     if (!latch_by_caller)
-    {
-      ut_ad(latch_mode != BTR_SEARCH_TREE);
       mtr_s_lock_index(index(), mtr);
-    }
   }
 
   auto root_savepoint = mtr->get_savepoint();
@@ -1929,7 +1922,6 @@ dberr_t btr_cur_search_to_nth_level(ulint level,
 
 	ut_ad(!latch_by_caller
 	      || latch_mode == BTR_SEARCH_LEAF
-	      || latch_mode == BTR_SEARCH_TREE
 	      || latch_mode == BTR_MODIFY_LEAF);
 
 	cursor->flag = BTR_CUR_BINARY;
@@ -1940,10 +1932,6 @@ dberr_t btr_cur_search_to_nth_level(ulint level,
 	info = btr_search_get_info(index);
 	guess = info->root_guess;
 #endif /* BTR_CUR_ADAPT */
-
-	/* Store the position of the tree latch we push to mtr so that we
-	know how to release it when we have latched leaf node(s) */
-	const ulint savepoint = mtr->get_savepoint();
 
 	rw_lock_type_t upper_rw_latch;
 	ulint node_ptr_max_size = 0;
@@ -1976,7 +1964,6 @@ dberr_t btr_cur_search_to_nth_level(ulint level,
 		break;
 	default:
 		if (!latch_by_caller) {
-			ut_ad(latch_mode != BTR_SEARCH_TREE);
 			mtr_s_lock_index(index, mtr);
 		}
 		upper_rw_latch = RW_S_LATCH;
@@ -2225,14 +2212,7 @@ need_opposite_intention:
 			      ? RW_X_LATCH : RW_SX_LATCH, false, mtr, &err);
 	} else {
 		ut_ad(mtr->memo_contains_flagged(block, upper_rw_latch));
-
-		if (latch_by_caller) {
-			ut_ad(latch_mode == BTR_SEARCH_TREE);
-			mtr->rollback_to_savepoint(savepoint + 1,
-						   mtr->get_savepoint() - 1);
-			ut_ad(mtr->memo_contains(index->lock,
-						 MTR_MEMO_SX_LOCK));
-		}
+		ut_ad(!latch_by_caller);
 	}
 
 	cursor->low_match = low_match;
@@ -2297,7 +2277,6 @@ dberr_t btr_cur_t::open_leaf(bool first, dict_index_t *index,
     upper_rw_latch= RW_S_LATCH;
     if (!latch_by_caller)
     {
-      ut_ad(latch_mode != BTR_SEARCH_TREE);
       savepoint++;
       mtr_s_lock_index(index, mtr);
     }

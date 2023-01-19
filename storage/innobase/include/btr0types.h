@@ -69,12 +69,10 @@ enum btr_latch_mode {
 	BTR_SEARCH_PREV = 4 | BTR_SEARCH_LEAF,
 	/** Modify the previous record. */
 	BTR_MODIFY_PREV = 4 | BTR_MODIFY_LEAF,
-	/** Start searching the entire B-tree. */
-	BTR_SEARCH_TREE = 8 | BTR_SEARCH_LEAF,
 	/** Start modifying the entire B-tree. */
 	BTR_MODIFY_TREE = 8 | BTR_MODIFY_LEAF,
 	/** Continue searching the entire B-tree. */
-	BTR_CONT_SEARCH_TREE = 4 | BTR_SEARCH_TREE,
+	BTR_CONT_SEARCH_TREE = 12 | BTR_SEARCH_LEAF,
 	/** Continue modifying the entire B-tree. */
 	BTR_CONT_MODIFY_TREE = 4 | BTR_MODIFY_TREE,
 
@@ -99,10 +97,6 @@ enum btr_latch_mode {
 	/** Search and S-latch a leaf page, assuming that the
 	dict_index_t::lock S-latch is being held. */
 	BTR_SEARCH_LEAF_ALREADY_S_LATCHED = BTR_SEARCH_LEAF
-	| BTR_ALREADY_S_LATCHED,
-	/** Search the entire index tree, assuming that the
-	dict_index_t::lock S-latch is being held. */
-	BTR_SEARCH_TREE_ALREADY_S_LATCHED = BTR_SEARCH_TREE
 	| BTR_ALREADY_S_LATCHED,
 	/** Search and X-latch a leaf page, assuming that the
 	dict_index_t::lock is being held in non-exclusive mode. */

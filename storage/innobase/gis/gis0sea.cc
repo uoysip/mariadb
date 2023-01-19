@@ -530,7 +530,7 @@ dberr_t rtr_search_to_nth_level(ulint level, const dtuple_t *tuple,
   latch_mode= BTR_LATCH_MODE_WITHOUT_FLAGS(latch_mode);
 
   ut_ad(!latch_by_caller || latch_mode == BTR_SEARCH_LEAF ||
-        latch_mode == BTR_SEARCH_TREE || latch_mode == BTR_MODIFY_LEAF);
+        latch_mode == latch_mode == BTR_MODIFY_LEAF);
 
   cur->flag= BTR_CUR_BINARY;
 
@@ -566,10 +566,7 @@ dberr_t rtr_search_to_nth_level(ulint level, const dtuple_t *tuple,
     break;
   default:
     if (!latch_by_caller)
-    {
-      ut_ad(latch_mode != BTR_SEARCH_TREE);
       mtr_s_lock_index(index, mtr);
-    }
     upper_rw_latch= root_leaf_rw_latch= RW_S_LATCH;
     if (latch_mode == BTR_MODIFY_LEAF || latch_mode == BTR_MODIFY_PREV)
       root_leaf_rw_latch= RW_X_LATCH;
@@ -1014,13 +1011,7 @@ dberr_t rtr_search_to_nth_level(ulint level, const dtuple_t *tuple,
     else
     {
       ut_ad(mtr->memo_contains_flagged(block, upper_rw_latch));
-
-      if (latch_by_caller)
-      {
-        ut_ad(latch_mode == BTR_SEARCH_TREE);
-        mtr->rollback_to_savepoint(savepoint + 1, mtr->get_savepoint() - 1);
-        ut_ad(mtr->memo_contains(index->lock, MTR_MEMO_SX_LOCK));
-      }
+      ut_ad(!latch_by_caller);
     }
 
     if (page_mode <= PAGE_CUR_LE)

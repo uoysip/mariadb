@@ -465,18 +465,9 @@ btr_pcur_move_to_next_page(
 		return DB_CORRUPTION;
 	}
 
-	ulint mode = cursor->latch_mode;
-	switch (mode) {
-	case BTR_SEARCH_TREE:
-		mode = BTR_SEARCH_LEAF;
-		break;
-	case BTR_MODIFY_TREE:
-		mode = BTR_MODIFY_LEAF;
-	}
-
 	dberr_t err;
 	buf_block_t* next_block = btr_block_get(
-		*cursor->index(), next_page_no, mode,
+		*cursor->index(), next_page_no, cursor->latch_mode & ~12,
 		page_is_leaf(page), mtr, &err);
 
 	if (UNIV_UNLIKELY(!next_block)) {
