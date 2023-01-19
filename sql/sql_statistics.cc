@@ -551,20 +551,6 @@ public:
 
   virtual void store_stat_fields()= 0;
 
-  
-  /**
-    @brief
-    Read statistical data from fields of the statistical table
-   
-    @details
-    This is a purely virtual method.
-    The implementation for any derived read shall read the appropriate
-    statistical data from the corresponding fields of stat_table.    
-  */      
-  
-  virtual void get_stat_values(Table_statistics *read_stats)= 0;
-
-
   /**
     @brief
     Find a record in the statistical table by a primary key
@@ -839,7 +825,7 @@ public:
     Read statistical data from statistical fields of table_stat
 
     @details
-    This implementation of a purely virtual method first looks for a record
+    This method first looks for a record in
     the statistical table table_stat by its primary key set the record
     buffer with the help of Table_stat::set_key_fields.  Then, if the row is
     found the function reads the value of the column 'cardinality' of the table
@@ -848,7 +834,7 @@ public:
     for 'table' accordingly.
   */    
 
-  void get_stat_values(Table_statistics *read_stats)
+  void get_table_stat_values(Table_statistics *read_stats)
   {
     read_stats->cardinality_is_null= TRUE;
     read_stats->cardinality= 0;
@@ -1089,7 +1075,7 @@ public:
     Read statistical data from statistical fields of column_stats
 
     @details
-    This implementation of a purely virtual method first looks for a record
+    This method first looks for a record
     in the statistical table column_stats by its primary key set in the record
     buffer with the help of Column_stat::set_key_fields. Then, if the row is
     found, the function reads the values of the columns 'min_value',
@@ -1101,7 +1087,7 @@ public:
     'table_field'.
   */    
 
-  void get_stat_values(Table_statistics *)
+  void get_column_stat_values()
   {
     table_field->read_stats->set_all_nulls();
 
@@ -1379,7 +1365,7 @@ public:
     Read statistical data from statistical fields of index_stats
 
     @details
-    This implementation of a purely virtual method first looks for a record the
+    This method first looks for a record in the
     statistical table index_stats by its primary key set the record buffer with
     the help of Index_stat::set_key_fields. If the row is found the function
     reads the value of the column 'avg_freguency' of the table index_stat and
@@ -1390,7 +1376,7 @@ public:
     set to the value of the column.
   */    
 
-    void get_stat_values(Table_statistics *)
+    void get_index_stat_values()
   {
     double avg_frequency= 0;
     if(find_stat())
@@ -2933,7 +2919,7 @@ int read_statistics_for_table(THD *thd, TABLE *table, TABLE_LIST *stat_tables,
   stat_table= stat_tables[TABLE_STAT].table;
   Table_stat table_stat(stat_table, table);
   table_stat.set_key_fields();
-  table_stat.get_stat_values(read_stats);
+  table_stat.get_table_stat_values(read_stats);
    
   /* Read statistics from the statistical table column_stats */
   stat_table= stat_tables[COLUMN_STAT].table;
@@ -2943,7 +2929,7 @@ int read_statistics_for_table(THD *thd, TABLE *table, TABLE_LIST *stat_tables,
   {
     table_field= *field_ptr;
     column_stat.set_key_fields(table_field);
-    column_stat.get_stat_values(nullptr);
+    column_stat.get_column_stat_values();
     total_hist_size+= table_field->read_stats->histogram.get_size();
   }
   new_stats_cb->get()->total_hist_size= total_hist_size;
@@ -2959,7 +2945,7 @@ int read_statistics_for_table(THD *thd, TABLE *table, TABLE_LIST *stat_tables,
     for (i= 0; i < key_parts; i++)
     {
       index_stat.set_key_fields(key_info, i+1);
-      index_stat.get_stat_values(nullptr);
+      index_stat.get_index_stat_values();
     }
    
     key_part_map ext_key_part_map= key_info->ext_key_part_map;

@@ -268,8 +268,6 @@ protected:
     other.ref_counter= nullptr;
   }
 
-  virtual ~Smart_ptr_base() {}
-
   Type *get() const { return managed_obj; }
 
   void inc_ref_count() const
@@ -289,6 +287,18 @@ protected:
     std::swap(this->managed_obj, other.managed_obj);
     std::swap(this->ref_counter, other.ref_counter);
   }
+
+protected:
+  /*
+    We intentionally made the destructor non-virtual to avoid creation of
+    the vtable for Smart_ptr_base. Though the class has children it does not
+    have virtual functions so there is no need for the vtable. To avoid common
+    mistake with non-virtual destructors like this one:
+      Smart_ptr_base<T> a= new Shared_ptr<T>;
+      delete a;
+    this destructor is placed in the protected section
+  */
+  ~Smart_ptr_base()= default;
 
 private:
   Type *managed_obj= nullptr;
