@@ -312,7 +312,7 @@ btr_page_search_father_node_ptr(
 					dict_index_build_node_ptr(index,
 								  user_rec, 0,
 								  heap, level),
-					BTR_CONT_MODIFY_TREE,
+					RW_X_LATCH,
 					cursor, mtr) != DB_SUCCESS) {
 		return nullptr;
 	}

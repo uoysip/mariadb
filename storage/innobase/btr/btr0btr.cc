@@ -464,7 +464,8 @@ buf_block_t *
 mtr_t::get_already_latched(const page_id_t id, mtr_memo_type_t type) const
 {
   ut_ad(is_active());
-  ut_ad(type == MTR_MEMO_PAGE_X_FIX || type == MTR_MEMO_PAGE_SX_FIX);
+  ut_ad(type == MTR_MEMO_PAGE_X_FIX || type == MTR_MEMO_PAGE_SX_FIX ||
+        type == MTR_MEMO_PAGE_S_FIX);
   for (ulint i= 0; i < m_memo.size(); i++)
   {
     const mtr_memo_slot_t &slot= m_memo[i];
@@ -766,7 +767,7 @@ btr_page_get_father_node_ptr_for_validate(
 					dict_index_build_node_ptr(index,
 								  user_rec, 0,
 								  heap, level),
-					BTR_CONT_SEARCH_TREE,
+					RW_S_LATCH,
 					cursor, mtr) != DB_SUCCESS) {
 		return nullptr;
 	}
@@ -2425,8 +2426,7 @@ btr_insert_on_non_leaf_level(
 					      BTR_CONT_MODIFY_TREE,
 					      &cursor, mtr);
 	} else {
-		err = btr_cur_search_to_nth_level(level, tuple,
-						  BTR_CONT_MODIFY_TREE,
+		err = btr_cur_search_to_nth_level(level, tuple, RW_X_LATCH,
 						  &cursor, mtr);
 	}
 

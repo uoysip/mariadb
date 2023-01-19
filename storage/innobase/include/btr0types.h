@@ -55,7 +55,7 @@ in the index record. */
 #define BTR_EXTERN_LOCAL_STORED_MAX_SIZE	\
 	(BTR_EXTERN_FIELD_REF_SIZE * 2)
 
-/** Latching modes for btr_cur_search_to_nth_level(). */
+/** Latching modes for btr_cur_t::search_leaf(). */
 enum btr_latch_mode {
 	/** Search a record on a leaf page and S-latch it. */
 	BTR_SEARCH_LEAF = RW_S_LATCH,
@@ -73,11 +73,8 @@ enum btr_latch_mode {
 	BTR_MODIFY_PREV = 4 | BTR_MODIFY_LEAF,
 	/** Start modifying the entire B-tree. */
 	BTR_MODIFY_TREE = 8 | BTR_MODIFY_LEAF,
-	/** Continue searching the entire B-tree.
-	Only used when btr_page_get_father_node_ptr_for_validate()
-	in CHECK TABLE (not QUICK) invokes btr_cur_search_to_nth_level(). */
-	BTR_CONT_SEARCH_TREE = 12 | BTR_SEARCH_LEAF,
-	/** Continue modifying the entire B-tree. */
+	/** Continue modifying the entire R-tree.
+	Only used by rtr_search_to_nth_level(). */
 	BTR_CONT_MODIFY_TREE = 4 | BTR_MODIFY_TREE,
 
 	/* BTR_INSERT, BTR_DELETE and BTR_DELETE_MARK are mutually

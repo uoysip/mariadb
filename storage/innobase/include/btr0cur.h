@@ -133,14 +133,14 @@ or on a page infimum record.
 @param level      the tree level of search
 @param tuple      data tuple; NOTE: n_fields_cmp in tuple must be set so that
                   it cannot get compared to the node ptr page number field!
-@param latch_mode BTR_SEARCH_LEAF, ...
+@param latch      RW_S_LATCH or RW_X_LATCH
 @param cursor     tree cursor; the cursor page is s- or x-latched, but see also
                   above!
 @param mtr        mini-transaction
 @return DB_SUCCESS on success or error code otherwise */
 dberr_t btr_cur_search_to_nth_level(ulint level,
                                     const dtuple_t *tuple,
-                                    btr_latch_mode latch_mode,
+                                    rw_lock_type_t rw_latch,
                                     btr_cur_t *cursor, mtr_t *mtr);
 
 /*************************************************************//**
@@ -703,14 +703,14 @@ struct btr_cur_t {
 					BTR_MODIFY_PREV */
 	/*------------------------------*/
 	que_thr_t*	thr;		/*!< this field is only used
-					when btr_cur_search_to_nth_level
+					when search_leaf()
 					is called for an index entry
 					insertion: the calling query
 					thread is passed here to be
 					used in the insert buffer */
 	/*------------------------------*/
 	/** The following fields are used in
-	btr_cur_search_to_nth_level to pass information: */
+	search_leaf() to pass information: */
 	/* @{ */
 	enum btr_cur_method	flag;	/*!< Search method used */
 	ulint		tree_height;	/*!< Tree height if the search is done
@@ -719,8 +719,7 @@ struct btr_cur_t {
 	ulint		up_match;	/*!< If the search mode was PAGE_CUR_LE,
 					the number of matched fields to the
 					the first user record to the right of
-					the cursor record after
-					btr_cur_search_to_nth_level;
+					the cursor record after search_leaf();
 					for the mode PAGE_CUR_GE, the matched
 					fields to the first user record AT THE
 					CURSOR or to the right of it;
@@ -737,8 +736,7 @@ struct btr_cur_t {
 	ulint		low_match;	/*!< if search mode was PAGE_CUR_LE,
 					the number of matched fields to the
 					first user record AT THE CURSOR or
-					to the left of it after
-					btr_cur_search_to_nth_level;
+					to the left of it after search_leaf();
 					NOT defined for PAGE_CUR_GE or any
 					other search modes; see also the NOTE
 					in up_match! */

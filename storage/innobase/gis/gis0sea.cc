@@ -44,7 +44,6 @@ Created 2014/01/16 Jimmy Yang
 static
 bool
 rtr_cur_restore_position(
-	ulint		latch_mode,	/*!< in: BTR_SEARCH_LEAF, ... */
 	btr_cur_t*	cursor,		/*!< in: detached persistent cursor */
 	ulint		level,		/*!< in: index level */
 	mtr_t*		mtr);		/*!< in: mtr */
@@ -544,7 +543,6 @@ dberr_t rtr_search_to_nth_level(ulint level, const dtuple_t *tuple,
     upper_rw_latch= RW_X_LATCH;
     break;
   default:
-    ut_ad(latch_mode != BTR_CONT_SEARCH_TREE);
     ut_ad(latch_mode != BTR_MODIFY_PREV);
     ut_ad(latch_mode != BTR_SEARCH_PREV);
     if (!latch_by_caller)
@@ -682,11 +680,6 @@ dberr_t rtr_search_to_nth_level(ulint level, const dtuple_t *tuple,
     case BTR_MODIFY_TREE:
     case BTR_CONT_MODIFY_TREE:
       break;
-#ifdef UNIV_DEBUG
-    case BTR_CONT_SEARCH_TREE:
-      ut_ad("invalid mode" == 0);
-      break;
-#endif
     default:
       if (!latch_by_caller)
       {
@@ -1080,8 +1073,7 @@ static const rec_t* rtr_get_father_node(
 	if (sea_cur && sea_cur->tree_height > level) {
 		ut_ad(mtr->memo_contains_flagged(&index->lock, MTR_MEMO_X_LOCK
 						 | MTR_MEMO_SX_LOCK));
-		if (rtr_cur_restore_position(BTR_CONT_MODIFY_TREE, sea_cur,
-					     level, mtr)) {
+		if (rtr_cur_restore_position(sea_cur, level, mtr)) {
 			btr_pcur_t*	r_cursor = rtr_get_parent_cursor(
 				sea_cur, level, false);
 
@@ -1545,7 +1537,6 @@ struct optimistic_get
 static
 bool
 rtr_cur_restore_position(
-	ulint		latch_mode,	/*!< in: BTR_SEARCH_LEAF, ... */
 	btr_cur_t*	btr_cur,	/*!< in: detached persistent cursor */
 	ulint		level,		/*!< in: index level */
 	mtr_t*		mtr)		/*!< in: mtr */
@@ -1572,8 +1563,6 @@ rtr_cur_restore_position(
 		"rtr_pessimistic_position",
 		r_cursor->modify_clock = 100;
 	);
-
-	ut_ad(latch_mode == BTR_CONT_MODIFY_TREE);
 
 	if (r_cursor->block_when_stored.run_with_hint(
 		optimistic_get(r_cursor, mtr))) {

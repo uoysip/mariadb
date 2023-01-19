@@ -104,7 +104,7 @@ bool
 row_purge_remove_clust_if_poss_low(
 /*===============================*/
 	purge_node_t*	node,	/*!< in/out: row purge node */
-	btr_latch_mode	mode)	/*!< in: BTR_MODIFY_LEAF or BTR_MODIFY_TREE */
+	btr_latch_mode	mode)	/*!< in: BTR_MODIFY_LEAF or BTR_PURGE_TREE */
 {
 	dict_index_t* index = dict_table_get_first_index(node->table);
 	table_id_t table_id = 0;
