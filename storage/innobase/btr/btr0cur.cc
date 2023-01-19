@@ -1299,10 +1299,7 @@ dberr_t btr_cur_t::search_leaf(const dtuple_t *tuple, page_cur_mode_t mode,
       mtr_s_lock_index(index(), mtr);
   }
 
-  auto root_savepoint = mtr->get_savepoint();
-  // ut_ad(root_savepoint == 1); // FIXME: replace this with a constant
-
-  const ulint zip_size = index()->table->space->zip_size();
+  const ulint zip_size= index()->table->space->zip_size();
 
   /* Start with the root page. */
   page_id_t page_id(index()->table->space_id, index()->page);
@@ -1418,8 +1415,7 @@ dberr_t btr_cur_t::search_leaf(const dtuple_t *tuple, page_cur_mode_t mode,
 
   if (height == ULINT_UNDEFINED)
   {
-    /* We are in the root node */
-    ut_ad(block_savepoint == root_savepoint);
+    /* We are in the B-tree index root page. */
 #ifdef BTR_CUR_ADAPT
     info->root_guess= block;
 #endif
@@ -1441,12 +1437,8 @@ dberr_t btr_cur_t::search_leaf(const dtuple_t *tuple, page_cur_mode_t mode,
         if (latch_mode != BTR_MODIFY_PREV)
         {
           if (!latch_by_caller)
-          {
             /* Release the tree s-latch */
-            ut_ad(root_savepoint == savepoint + 1);
-            root_savepoint= savepoint;
             mtr->rollback_to_savepoint(savepoint, savepoint + 1);
-          }
           goto reached_latched_leaf;
         }
         /* fall through */
@@ -1470,6 +1462,23 @@ dberr_t btr_cur_t::search_leaf(const dtuple_t *tuple, page_cur_mode_t mode,
   }
   else if (UNIV_UNLIKELY(height != page_level))
     goto corrupted;
+  else
+    switch (latch_mode) {
+    case BTR_MODIFY_TREE:
+      break;
+    case BTR_MODIFY_ROOT_AND_LEAF:
+      ut_ad((mtr->at_savepoint(block_savepoint - 1)->page.id().page_no() ==
+             index()->page) == (tree_height <= height + 2));
+      if (tree_height <= height + 2)
+        /* Retain the root page latch. */
+        break;
+      /* fall through */
+    default:
+      /* Release the parent page latch. */
+      ut_ad(block_savepoint > savepoint);
+      mtr->rollback_to_savepoint(block_savepoint - 1, block_savepoint);
+      block_savepoint--;
+    }
 
   if (!height)
   {
@@ -1479,11 +1488,6 @@ dberr_t btr_cur_t::search_leaf(const dtuple_t *tuple, page_cur_mode_t mode,
 
     if (latch_mode == BTR_MODIFY_ROOT_AND_LEAF)
     {
-      ut_ad(!(savepoint - latch_by_caller));
-      ut_ad(mtr->get_savepoint() > savepoint);
-      /* Release any other latches than those on the root and leaf pages. */
-      ut_ad(block_savepoint > root_savepoint);
-      mtr->rollback_to_savepoint(root_savepoint + 1, block_savepoint);
     reached_root_and_leaf:
       if (!latch_by_caller)
         mtr->rollback_to_savepoint(savepoint, savepoint + 1);
@@ -1509,8 +1513,6 @@ dberr_t btr_cur_t::search_leaf(const dtuple_t *tuple, page_cur_mode_t mode,
       if (!latch_by_caller)
       {
         /* Release the tree s-latch */
-        ut_ad(root_savepoint == savepoint + 1);
-        root_savepoint= savepoint;
         block_savepoint--;
         mtr->rollback_to_savepoint(savepoint, savepoint + 1);
       }
@@ -1624,12 +1626,15 @@ dberr_t btr_cur_t::search_leaf(const dtuple_t *tuple, page_cur_mode_t mode,
     else
       goto corrupted;
 
-    /* If the page might cause modify_tree, we should not release the
-    parent page latches. */
-    if (!btr_cur_will_modify_tree(index(), page, lock_intention,
+    /* Release the non-root parent page unless it may need to be modified. */
+    if (tree_height > height + 1 &&
+        !btr_cur_will_modify_tree(index(), page, lock_intention,
                                   page_cur.rec, node_ptr_max_size,
                                   zip_size, mtr))
-      mtr->rollback_to_savepoint(root_savepoint + 1);
+    {
+      mtr->rollback_to_savepoint(block_savepoint - 1, block_savepoint);
+      block_savepoint--;
+    }
   }
 
   /* Go to the child node */
@@ -1970,7 +1975,6 @@ dberr_t btr_cur_search_to_nth_level(ulint level,
 	}
 
 	auto root_savepoint = mtr->get_savepoint();
-	// ut_ad(root_savepoint == 1); // FIXME: replace this with a constant
 
 	const rw_lock_type_t root_leaf_rw_latch = btr_cur_latch_for_root_leaf(
 		latch_mode);

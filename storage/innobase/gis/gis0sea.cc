@@ -555,8 +555,6 @@ dberr_t rtr_search_to_nth_level(ulint level, const dtuple_t *tuple,
   }
 
   auto root_savepoint= mtr->get_savepoint();
-  // ut_ad(root_savepoint == 1); // FIXME: replace this with a constant
-
   const ulint zip_size= index->table->space->zip_size();
 
   /* Start with the root page. */
