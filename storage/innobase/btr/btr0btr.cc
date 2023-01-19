@@ -818,7 +818,7 @@ btr_page_get_parent(
     if (buf_block_t *block= mtr->block_at_savepoint(i))
       if (block->page.id().page_no() == p)
       {
-        ut_ad(block->page.lock.have_x() ||
+        ut_ad(block->page.lock.have_u_or_x() ||
               (!block->page.lock.have_s() && index->lock.have_x()));
         ulint up_match= 0, low_match= 0;
         cursor->page_cur.block= block;
@@ -834,7 +834,13 @@ btr_page_get_parent(
           i= 0; // FIXME: require all pages to be latched in order!
           continue;
         }
-        ut_ad(block->page.lock.have_x());
+        ut_ad(block->page.lock.have_u_or_x());
+        if (block->page.lock.have_u_not_x())
+        {
+          ut_ad(block->page.id().page_no() == index->page);
+          block->page.lock.u_x_upgrade();
+          mtr->page_lock_upgrade(*block);
+        }
         return offsets;
       }
 
