@@ -2842,8 +2842,6 @@ do_insert:
 				goto err_exit;
 			}
 
-			DEBUG_SYNC_C("before_insert_pessimitic_row_ins_clust");
-
 			err = btr_cur_optimistic_insert(
 				flags, &pcur.btr_cur,
 				&offsets, &offsets_heap,
