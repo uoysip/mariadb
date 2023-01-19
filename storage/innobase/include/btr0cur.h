@@ -120,21 +120,6 @@ bool
 btr_cur_instant_root_init(dict_index_t* index, const page_t* page)
 	ATTRIBUTE_COLD __attribute__((nonnull, warn_unused_result));
 
-/** Optimistically latches the leaf page or pages requested.
-@param[in]	block		guessed buffer block
-@param[in]	modify_clock	modify clock value
-@param[in,out]	latch_mode	BTR_SEARCH_LEAF, ...
-@param[in,out]	cursor		cursor
-@param[in]	mtr		mini-transaction
-@return true if success */
-bool
-btr_cur_optimistic_latch_leaves(
-	buf_block_t*	block,
-	ib_uint64_t	modify_clock,
-	btr_latch_mode*	latch_mode,
-	btr_cur_t*	cursor,
-	mtr_t*		mtr);
-
 MY_ATTRIBUTE((warn_unused_result))
 /********************************************************************//**
 Searches an index tree and positions a tree cursor on a given non-leaf level.
