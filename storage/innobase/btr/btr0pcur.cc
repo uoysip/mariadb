@@ -236,13 +236,10 @@ static bool btr_pcur_optimistic_latch_leaves(buf_block_t *block,
   const rw_lock_type_t mode=
     rw_lock_type_t(*latch_mode & (RW_X_LATCH | RW_S_LATCH));
 
-  if (!buf_page_optimistic_get(mode, block, pcur->modify_clock, mtr))
-    return false;
-
   switch (*latch_mode) {
   default:
     ut_ad(*latch_mode == BTR_SEARCH_LEAF || *latch_mode == BTR_MODIFY_LEAF);
-    return true;
+    return buf_page_optimistic_get(mode, block, pcur->modify_clock, mtr);
   case BTR_SEARCH_PREV: /* btr_pcur_move_backward_from_page() */
   case BTR_MODIFY_PREV: /* Ditto, or ibuf_insert() */
     page_id_t id{0};
