@@ -2302,6 +2302,7 @@ func_exit:
 	return(rec);
 }
 
+#ifdef UNIV_DEBUG
 /*************************************************************//**
 Returns TRUE if the insert fits on the appropriate half-page with the
 chosen split_rec.
@@ -2399,6 +2400,7 @@ got_rec:
 
 	return(false);
 }
+#endif
 
 /*******************************************************//**
 Inserts a data tuple to a tree on a non-leaf level. It is assumed
@@ -3114,6 +3116,7 @@ insert_empty:
 		return nullptr;
 	}
 
+#ifdef UNIV_DEBUG
 	/* If the split is made on the leaf level and the insert will fit
 	on the appropriate half-page, we may release the tree x-latch.
 	We can then move the records after releasing the tree latch,
@@ -3121,6 +3124,7 @@ insert_empty:
 	const bool insert_will_fit = !new_page_zip
 		&& btr_page_insert_fits(cursor, split_rec, offsets, tuple,
 					n_ext, heap);
+#endif
 	if (!split_rec && !insert_left) {
 		UT_DELETE_ARRAY(buf);
 		buf = NULL;
