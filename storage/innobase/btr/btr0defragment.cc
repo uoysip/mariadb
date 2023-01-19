@@ -297,12 +297,10 @@ btr_page_search_father_node_ptr(
 {
 	const uint32_t page_no = btr_cur_get_block(cursor)->page.id().page_no();
 	dict_index_t* index = btr_cur_get_index(cursor);
-	ut_ad(!dict_index_is_spatial(index));
+	ut_ad(!index->is_spatial());
 
-	ut_ad(srv_read_only_mode
-	      || mtr->memo_contains_flagged(&index->lock, MTR_MEMO_X_LOCK
-					    | MTR_MEMO_SX_LOCK));
-
+	ut_ad(mtr->memo_contains_flagged(&index->lock, MTR_MEMO_X_LOCK
+					 | MTR_MEMO_SX_LOCK));
 	ut_ad(dict_index_get_page(index) != page_no);
 
 	const auto level = btr_page_get_level(btr_cur_get_page(cursor));

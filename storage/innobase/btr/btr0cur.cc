@@ -2233,7 +2233,7 @@ dberr_t btr_cur_t::open_leaf(bool first, dict_index_t *index,
   rec_offs_init(offsets_);
 
   const bool latch_by_caller= latch_mode & BTR_ALREADY_S_LATCHED;
-  latch_mode = btr_latch_mode(latch_mode & ~BTR_ALREADY_S_LATCHED);
+  latch_mode= btr_latch_mode(latch_mode & ~BTR_ALREADY_S_LATCHED);
 
   lock_intention= btr_cur_get_and_clear_intention(&latch_mode);
 
@@ -2261,16 +2261,13 @@ dberr_t btr_cur_t::open_leaf(bool first, dict_index_t *index,
   }
   else
   {
+    static_assert(int{BTR_CONT_SEARCH_TREE} == (12 | BTR_SEARCH_LEAF), "");
+    static_assert(int{BTR_CONT_MODIFY_TREE} == (12 | BTR_MODIFY_LEAF), "");
+    ut_ad(!(latch_mode & 8));
     /* This function doesn't need to lock left page of the leaf page */
-    if (latch_mode == BTR_SEARCH_PREV)
-      latch_mode= BTR_SEARCH_LEAF;
-    else if (latch_mode == BTR_MODIFY_PREV)
-      latch_mode= BTR_MODIFY_LEAF;
-    else
-    {
-      ut_ad(latch_mode != BTR_CONT_MODIFY_TREE);
-      ut_ad(latch_mode != BTR_CONT_SEARCH_TREE);
-    }
+    static_assert(int{BTR_SEARCH_PREV} == (4 | BTR_SEARCH_LEAF), "");
+    static_assert(int{BTR_MODIFY_PREV} == (4 | BTR_MODIFY_LEAF), "");
+    latch_mode= btr_latch_mode(latch_mode & ~4);
     ut_ad(!latch_by_caller ||
           mtr->memo_contains_flagged(&index->lock,
                                      MTR_MEMO_SX_LOCK | MTR_MEMO_S_LOCK));
@@ -2345,16 +2342,10 @@ dberr_t btr_cur_t::open_leaf(bool first, dict_index_t *index,
         if (rw_latch == RW_NO_LATCH)
           btr_cur_latch_leaves(leaf_savepoint - 1, latch_mode, this, mtr);
 
-        switch (latch_mode) {
-        case BTR_MODIFY_TREE:
-        case BTR_CONT_MODIFY_TREE:
-        case BTR_CONT_SEARCH_TREE:
-          break;
-        default:
+        if (latch_mode != BTR_MODIFY_TREE)
           /* Release index->lock if needed, and the non-leaf pages. */
           mtr->rollback_to_savepoint(savepoint - !latch_by_caller,
                                      leaf_savepoint - 1);
-        }
         break;
       }
     }

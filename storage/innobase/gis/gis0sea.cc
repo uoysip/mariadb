@@ -483,31 +483,20 @@ dberr_t rtr_search_to_nth_level(ulint level, const dtuple_t *tuple,
                                 btr_latch_mode latch_mode,
                                 btr_cur_t *cur, mtr_t *mtr)
 {
-  page_t*		page = NULL; /* remove warning */
-  buf_block_t*	block;
-  ulint		height;
-  ulint		up_match;
-  ulint		up_bytes;
-  ulint		low_match;
-  ulint		low_bytes;
-  page_cur_mode_t	page_mode;
-  page_cur_mode_t	search_mode = PAGE_CUR_UNSUPP;
+  page_cur_mode_t page_mode;
+  page_cur_mode_t search_mode= PAGE_CUR_UNSUPP;
 
-  ulint		leftmost_from_level = 0;
-  ulint		prev_level = 0;
-  bool		mbr_adj = false;
-  bool		found = false;
-  dict_index_t * const index = cur->index();
+  ulint leftmost_from_level= 0;
+  ulint prev_level= 0;
+  bool mbr_adj= false;
+  bool found= false;
+  dict_index_t *const index= cur->index();
 
-  mem_heap_t*	heap		= NULL;
-  rec_offs	offsets_[REC_OFFS_NORMAL_SIZE];
-  rec_offs*	offsets		= offsets_;
+  mem_heap_t *heap= nullptr;
+  rec_offs offsets_[REC_OFFS_NORMAL_SIZE];
+  rec_offs *offsets= offsets_;
   rec_offs_init(offsets_);
-  /* Currently, PAGE_CUR_LE is the only search mode used for searches
-     ending to upper levels */
-
-  ut_ad(level == 0 || mode == PAGE_CUR_LE
-        || RTREE_SEARCH_MODE(mode));
+  ut_ad(level == 0 || mode == PAGE_CUR_LE || RTREE_SEARCH_MODE(mode));
   ut_ad(dict_index_check_search_tuple(index, tuple));
   ut_ad(dtuple_check_typed(tuple));
   ut_ad(index->is_spatial());
@@ -517,10 +506,8 @@ dberr_t rtr_search_to_nth_level(ulint level, const dtuple_t *tuple,
   MEM_UNDEFINED(&cur->up_bytes, sizeof cur->up_bytes);
   MEM_UNDEFINED(&cur->low_match, sizeof cur->low_match);
   MEM_UNDEFINED(&cur->low_bytes, sizeof cur->low_bytes);
-#ifdef UNIV_DEBUG
-  cur->up_match = ULINT_UNDEFINED;
-  cur->low_match = ULINT_UNDEFINED;
-#endif /* UNIV_DEBUG */
+  ut_d(cur->up_match= ULINT_UNDEFINED);
+  ut_d(cur->low_match= ULINT_UNDEFINED);
 
   const bool latch_by_caller= latch_mode & BTR_ALREADY_S_LATCHED;
 
@@ -530,7 +517,7 @@ dberr_t rtr_search_to_nth_level(ulint level, const dtuple_t *tuple,
   latch_mode= BTR_LATCH_MODE_WITHOUT_FLAGS(latch_mode);
 
   ut_ad(!latch_by_caller || latch_mode == BTR_SEARCH_LEAF ||
-        latch_mode == latch_mode == BTR_MODIFY_LEAF);
+        latch_mode == BTR_MODIFY_LEAF);
 
   cur->flag= BTR_CUR_BINARY;
 
@@ -558,13 +545,8 @@ dberr_t rtr_search_to_nth_level(ulint level, const dtuple_t *tuple,
                                      MTR_MEMO_SX_LOCK));
     upper_rw_latch= RW_X_LATCH;
     break;
-  case BTR_CONT_SEARCH_TREE:
-    /* Do nothing */
-    ut_ad(mtr->memo_contains_flagged(&index->lock, MTR_MEMO_X_LOCK |
-                                     MTR_MEMO_SX_LOCK));
-    upper_rw_latch= RW_NO_LATCH;
-    break;
   default:
+    ut_ad(latch_mode != BTR_CONT_SEARCH_TREE);
     if (!latch_by_caller)
       mtr_s_lock_index(index, mtr);
     upper_rw_latch= root_leaf_rw_latch= RW_S_LATCH;
@@ -572,20 +554,16 @@ dberr_t rtr_search_to_nth_level(ulint level, const dtuple_t *tuple,
       root_leaf_rw_latch= RW_X_LATCH;
   }
 
-  auto root_savepoint = mtr->get_savepoint();
+  auto root_savepoint= mtr->get_savepoint();
   // ut_ad(root_savepoint == 1); // FIXME: replace this with a constant
 
-  const ulint		zip_size = index->table->space->zip_size();
+  const ulint zip_size= index->table->space->zip_size();
 
   /* Start with the root page. */
-  page_id_t		page_id(index->table->space_id, index->page);
+  page_id_t page_id(index->table->space_id, index->page);
 
-  up_match = 0;
-  up_bytes = 0;
-  low_match = 0;
-  low_bytes = 0;
-
-  height = ULINT_UNDEFINED;
+  ulint up_match= 0, up_bytes= 0, low_match= 0, low_bytes= 0;
+  ulint height= ULINT_UNDEFINED;
 
   /* We use these modified search modes on non-leaf levels of the
      B-tree. These let us end up in the right B-tree leaf. In that leaf
@@ -593,10 +571,10 @@ dberr_t rtr_search_to_nth_level(ulint level, const dtuple_t *tuple,
 
   switch (mode) {
   case PAGE_CUR_GE:
-    page_mode = PAGE_CUR_L;
+    page_mode= PAGE_CUR_L;
     break;
   case PAGE_CUR_G:
-    page_mode = PAGE_CUR_LE;
+    page_mode= PAGE_CUR_LE;
     break;
   default:
 #ifdef PAGE_CUR_LE_OR_EXTENDS
@@ -607,7 +585,7 @@ dberr_t rtr_search_to_nth_level(ulint level, const dtuple_t *tuple,
     ut_ad(mode == PAGE_CUR_L || mode == PAGE_CUR_LE
           || RTREE_SEARCH_MODE(mode));
 #endif /* PAGE_CUR_LE_OR_EXTENDS */
-    page_mode = mode;
+    page_mode= mode;
     break;
   }
 
@@ -629,10 +607,9 @@ dberr_t rtr_search_to_nth_level(ulint level, const dtuple_t *tuple,
     rw_latch= latch_mode;
 
   dberr_t err;
-  auto block_savepoint = mtr->get_savepoint();
-  block = buf_page_get_gen(page_id, zip_size, rw_latch, guess,
-                           buf_mode, mtr, &err,
-                           height == 0 && !index->is_clust());
+  auto block_savepoint= mtr->get_savepoint();
+  buf_block_t *block= buf_page_get_gen(page_id, zip_size, rw_latch, guess,
+                                       buf_mode, mtr, &err, false);
   if (!block)
   {
     if (err == DB_DECRYPTION_FAILED)
@@ -653,22 +630,21 @@ dberr_t rtr_search_to_nth_level(ulint level, const dtuple_t *tuple,
     /* also latch left sibling */
     ut_ad(rw_latch == RW_NO_LATCH);
 
-    rw_latch = upper_rw_latch;
+    rw_latch= upper_rw_latch;
 
     /* Because we are holding index->lock, no page splits
        or merges may run concurrently, and we may read
        FIL_PAGE_PREV from a buffer-fixed, unlatched page. */
-    uint32_t left_page_no = btr_page_get_prev(block->page.frame);
+    uint32_t left_page_no= btr_page_get_prev(block->page.frame);
 
     if (left_page_no != FIL_NULL) {
-      buf_block_t* get_block = buf_page_get_gen(
-                                                page_id_t(page_id.space(), left_page_no),
-                                                zip_size, rw_latch, NULL, buf_mode,
-                                                mtr, &err);
-      if (!get_block) {
-        if (err == DB_DECRYPTION_FAILED) {
+      buf_block_t* get_block=
+        buf_page_get_gen(page_id_t(page_id.space(), left_page_no),
+                         zip_size, rw_latch, NULL, buf_mode, mtr, &err);
+      if (!get_block)
+      {
+        if (err == DB_DECRYPTION_FAILED)
           btr_decryption_failed(*index);
-        }
         goto func_exit;
       }
 
@@ -682,7 +658,7 @@ dberr_t rtr_search_to_nth_level(ulint level, const dtuple_t *tuple,
     block->page.lock.s_lock();
   }
 
-  page = buf_block_get_frame(block);
+  const page_t *page= buf_block_get_frame(block);
 #ifdef UNIV_ZIP_DEBUG
   if (rw_latch != RW_NO_LATCH) {
     const page_zip_des_t *page_zip= buf_block_get_page_zip(block);
@@ -713,8 +689,8 @@ dberr_t rtr_search_to_nth_level(ulint level, const dtuple_t *tuple,
   {
     /* We are in the root node */
 
-    height = btr_page_get_level(page);
-    cur->tree_height = height + 1;
+    height= btr_page_get_level(page);
+    cur->tree_height= height + 1;
 
     ut_ad(cur->rtr_info);
 
@@ -724,7 +700,7 @@ dberr_t rtr_search_to_nth_level(ulint level, const dtuple_t *tuple,
       index->set_ssn(page_get_ssn_id(page) + 1);
 
     /* Save the MBR */
-    cur->rtr_info->thr = cur->thr;
+    cur->rtr_info->thr= cur->thr;
     rtr_get_mbr_from_tuple(tuple, &cur->rtr_info->mbr);
 
 #ifdef BTR_CUR_ADAPT
@@ -742,11 +718,15 @@ dberr_t rtr_search_to_nth_level(ulint level, const dtuple_t *tuple,
     switch (latch_mode) {
     case BTR_MODIFY_TREE:
     case BTR_CONT_MODIFY_TREE:
-    case BTR_CONT_SEARCH_TREE:
       break;
+#ifdef UNIV_DEBUG
+    case BTR_CONT_SEARCH_TREE:
+      ut_ad("invalid mode" == 0);
+      break;
+#endif
     default:
-      if (!latch_by_caller
-          && !srv_read_only_mode) {
+      if (!latch_by_caller)
+      {
         /* Release the tree s-latch */
         mtr->rollback_to_savepoint(savepoint,
                                    savepoint + 1);
@@ -758,7 +738,7 @@ dberr_t rtr_search_to_nth_level(ulint level, const dtuple_t *tuple,
         mtr->rollback_to_savepoint(savepoint, block_savepoint);
     }
 
-    page_mode = mode;
+    page_mode= mode;
   }
 
   /* Remember the page search mode */
@@ -772,7 +752,7 @@ dberr_t rtr_search_to_nth_level(ulint level, const dtuple_t *tuple,
 
   if (page_mode == PAGE_CUR_RTREE_INSERT)
   {
-    page_mode = (level == height)
+    page_mode= (level == height)
       ? PAGE_CUR_LE
       : PAGE_CUR_RTREE_INSERT;
 
@@ -781,21 +761,19 @@ dberr_t rtr_search_to_nth_level(ulint level, const dtuple_t *tuple,
   else if (page_mode == PAGE_CUR_RTREE_LOCATE && level == height)
     page_mode= level == 0 ? PAGE_CUR_LE : PAGE_CUR_RTREE_GET_FATHER;
 
-  up_match = 0;
-  low_match = 0;
+  up_match= 0;
+  low_match= 0;
 
-  if (latch_mode == BTR_MODIFY_TREE
-      || latch_mode == BTR_CONT_MODIFY_TREE
-      || latch_mode == BTR_CONT_SEARCH_TREE)
+  if (latch_mode == BTR_MODIFY_TREE || latch_mode == BTR_CONT_MODIFY_TREE)
     /* Tree are locked, no need for Page Lock to protect the "path" */
-    cur->rtr_info->need_page_lock = false;
+    cur->rtr_info->need_page_lock= false;
 
-  cur->page_cur.block = block;
+  cur->page_cur.block= block;
 
   if (page_mode >= PAGE_CUR_CONTAIN)
   {
-    found = rtr_cur_search_with_match(block, index, tuple, page_mode,
-                                      &cur->page_cur, cur->rtr_info);
+    found= rtr_cur_search_with_match(block, index, tuple, page_mode,
+                                     &cur->page_cur, cur->rtr_info);
 
     /* Need to use BTR_MODIFY_TREE to do the MBR adjustment */
     if (search_mode == PAGE_CUR_RTREE_INSERT && cur->rtr_info->mbr_adj) {
@@ -805,20 +783,20 @@ dberr_t rtr_search_to_nth_level(ulint level, const dtuple_t *tuple,
         /* Parent MBR needs updated, should retry with BTR_MODIFY_TREE */
         goto func_exit;
 
-      cur->rtr_info->mbr_adj = false;
-      mbr_adj = true;
+      cur->rtr_info->mbr_adj= false;
+      mbr_adj= true;
     }
 
     if (found && page_mode == PAGE_CUR_RTREE_GET_FATHER)
-      cur->low_match = DICT_INDEX_SPATIAL_NODEPTR_SIZE + 1;
+      cur->low_match= DICT_INDEX_SPATIAL_NODEPTR_SIZE + 1;
   }
   else
   {
     /* Search for complete index fields. */
-    up_bytes = low_bytes = 0;
+    up_bytes= low_bytes= 0;
     if (page_cur_search_with_match(tuple, page_mode, &up_match,
                                    &low_match, &cur->page_cur, nullptr)) {
-      err = DB_CORRUPTION;
+      err= DB_CORRUPTION;
       goto func_exit;
     }
   }
@@ -835,7 +813,7 @@ dberr_t rtr_search_to_nth_level(ulint level, const dtuple_t *tuple,
     lock_prdt_t prdt;
 
     {
-      trx_t* trx = thr_get_trx(cur->thr);
+      trx_t* trx= thr_get_trx(cur->thr);
       TMLockTrxGuard g{TMLockTrxArgs(*trx)};
       lock_init_prdt_from_mbr(&prdt, &cur->rtr_info->mbr, mode,
                               trx->lock.lock_heap);
@@ -859,13 +837,13 @@ dberr_t rtr_search_to_nth_level(ulint level, const dtuple_t *tuple,
 
     const rec_t *node_ptr= btr_cur_get_rec(cur);
 
-    offsets = rec_get_offsets(node_ptr, index, offsets, 0,
-                              ULINT_UNDEFINED, &heap);
+    offsets= rec_get_offsets(node_ptr, index, offsets, 0,
+                             ULINT_UNDEFINED, &heap);
 
     if (page_rec_is_supremum(node_ptr))
     {
-      cur->low_match = 0;
-      cur->up_match = 0;
+      cur->low_match= 0;
+      cur->up_match= 0;
       goto func_exit;
     }
 
@@ -929,7 +907,7 @@ dberr_t rtr_search_to_nth_level(ulint level, const dtuple_t *tuple,
       if (page_has_prev(page) && page_rec_is_first(node_ptr, page))
       {
         if (leftmost_from_level == 0)
-          leftmost_from_level = height + 1;
+          leftmost_from_level= height + 1;
 
         if (leftmost_from_level && height == 0) {
           /* Backtrack to leftmost_from_level. */
@@ -948,7 +926,7 @@ dberr_t rtr_search_to_nth_level(ulint level, const dtuple_t *tuple,
           rtr_info_t *rtr_info= page_mode >= PAGE_CUR_CONTAIN
             ? cur->rtr_info : nullptr;
 
-          for (auto i = root_savepoint; i < s; i++)
+          for (auto i= root_savepoint; i < s; i++)
           {
             cur->page_cur.block= mtr->at_savepoint(i);
             if (page_cur_search_with_match(tuple, page_mode,
@@ -964,7 +942,7 @@ dberr_t rtr_search_to_nth_level(ulint level, const dtuple_t *tuple,
         }
       }
       else
-        leftmost_from_level = 0;
+        leftmost_from_level= 0;
     }
 
     /* Go to the child node */
@@ -985,8 +963,8 @@ dberr_t rtr_search_to_nth_level(ulint level, const dtuple_t *tuple,
           btr_pcur_t* pcur= cur->rtr_info->parent_path->back().cursor;
           rec_t *my_node_ptr= btr_pcur_get_rec(pcur);
 
-          offsets = rec_get_offsets(my_node_ptr, index, offsets,
-                                    0, ULINT_UNDEFINED, &heap);
+          offsets= rec_get_offsets(my_node_ptr, index, offsets,
+                                   0, ULINT_UNDEFINED, &heap);
 
           ut_ad(page_id.page_no() ==
                 btr_node_ptr_get_child_page_no(my_node_ptr, offsets));
@@ -1002,11 +980,8 @@ dberr_t rtr_search_to_nth_level(ulint level, const dtuple_t *tuple,
   {
     if (upper_rw_latch == RW_NO_LATCH)
     {
-      ut_ad(latch_mode == BTR_CONT_MODIFY_TREE ||
-            latch_mode == BTR_CONT_SEARCH_TREE);
-      btr_block_get(*index, page_id.page_no(),
-                    latch_mode == BTR_CONT_MODIFY_TREE
-                    ? RW_X_LATCH : RW_SX_LATCH, false, mtr, &err);
+      ut_ad(latch_mode == BTR_CONT_MODIFY_TREE);
+      btr_block_get(*index, page_id.page_no(), RW_X_LATCH, false, mtr, &err);
     }
     else
     {
@@ -1016,20 +991,20 @@ dberr_t rtr_search_to_nth_level(ulint level, const dtuple_t *tuple,
 
     if (page_mode <= PAGE_CUR_LE)
     {
-      cur->low_match = low_match;
-      cur->up_match = up_match;
+      cur->low_match= low_match;
+      cur->up_match= up_match;
     }
   }
   else
   {
-    cur->low_match = low_match;
-    cur->low_bytes = low_bytes;
-    cur->up_match = up_match;
-    cur->up_bytes = up_bytes;
+    cur->low_match= low_match;
+    cur->low_bytes= low_bytes;
+    cur->up_match= up_match;
+    cur->up_bytes= up_bytes;
 
-    ut_ad(cur->up_match != ULINT_UNDEFINED || mode != PAGE_CUR_GE);
-    ut_ad(cur->up_match != ULINT_UNDEFINED || mode != PAGE_CUR_LE);
-    ut_ad(cur->low_match != ULINT_UNDEFINED || mode != PAGE_CUR_LE);
+    ut_ad(up_match != ULINT_UNDEFINED || mode != PAGE_CUR_GE);
+    ut_ad(up_match != ULINT_UNDEFINED || mode != PAGE_CUR_LE);
+    ut_ad(low_match != ULINT_UNDEFINED || mode != PAGE_CUR_LE);
   }
 
   goto func_exit;
@@ -1280,9 +1255,8 @@ rtr_page_get_father_node_ptr(
 	page_no = btr_cur_get_block(cursor)->page.id().page_no();
 	index = btr_cur_get_index(cursor);
 
-	ut_ad(srv_read_only_mode
-	      || mtr->memo_contains_flagged(&index->lock, MTR_MEMO_X_LOCK
-					    | MTR_MEMO_SX_LOCK));
+	ut_ad(mtr->memo_contains_flagged(&index->lock, MTR_MEMO_X_LOCK
+					 | MTR_MEMO_SX_LOCK));
 
 	ut_ad(dict_index_get_page(index) != page_no);
 

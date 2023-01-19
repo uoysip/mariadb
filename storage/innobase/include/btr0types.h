@@ -71,7 +71,9 @@ enum btr_latch_mode {
 	BTR_MODIFY_PREV = 4 | BTR_MODIFY_LEAF,
 	/** Start modifying the entire B-tree. */
 	BTR_MODIFY_TREE = 8 | BTR_MODIFY_LEAF,
-	/** Continue searching the entire B-tree. */
+	/** Continue searching the entire B-tree.
+	Only used when btr_page_get_father_node_ptr_for_validate()
+	in CHECK TABLE (not QUICK) invokes btr_cur_search_to_nth_level(). */
 	BTR_CONT_SEARCH_TREE = 12 | BTR_SEARCH_LEAF,
 	/** Continue modifying the entire B-tree. */
 	BTR_CONT_MODIFY_TREE = 4 | BTR_MODIFY_TREE,
