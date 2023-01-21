@@ -2806,7 +2806,7 @@ TABLE *Delayed_insert::get_local_table(THD* client_thd)
       Make a copy of the table statistics shared pointer to increase the count
       of references and thus lock the statistics
     */
-    copy->stats_cb= new Shared_ptr<TABLE_STATISTICS_CB>(*table->stats_cb);
+    copy->stats_cb= table->stats_cb;
   }
 
   DBUG_RETURN(copy);

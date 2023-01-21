@@ -2887,7 +2887,7 @@ int read_statistics_for_table(THD *thd, TABLE *table, TABLE_LIST *stat_tables,
 
   DBUG_ENTER("read_statistics_for_table");
 
-  if (!force_reload && table_share->stats_cb->get()->stats_are_ready())
+  if (!force_reload && table_share->stats_cb->stats_are_ready())
   {
     /* Statistics has been already loaded, no need to read from stat tables */
     DBUG_RETURN(0);
@@ -2897,25 +2897,18 @@ int read_statistics_for_table(THD *thd, TABLE *table, TABLE_LIST *stat_tables,
     Read data into a new TABLE_STATISTICS_CB object and replace
     TABLE_SHARE::stats_cb with this new one once the reading is finished
   */
-  auto new_stats_cb=
-      new Shared_ptr<TABLE_STATISTICS_CB>(new TABLE_STATISTICS_CB);
-  if (!new_stats_cb->get()->start_stats_load())
-  {
-    delete new_stats_cb;
-    DBUG_RETURN(table_share->stats_cb->get()->stats_are_ready() ? 0 : 1);
-  }
+  Shared_ptr<TABLE_STATISTICS_CB> new_stats_cb(new TABLE_STATISTICS_CB);
+  if (!new_stats_cb->start_stats_load())
+    DBUG_RETURN(table_share->stats_cb->stats_are_ready() ? 0 : 1);
 
-  if (alloc_statistics_for_table_share(thd, table_share, new_stats_cb->get()))
-  {
-    delete new_stats_cb;
+  if (alloc_statistics_for_table_share(thd, table_share, new_stats_cb.get()))
     DBUG_RETURN(1);
-  }
 
   /* Don't write warnings for internal field conversions */
   Check_level_instant_set check_level_save(thd, CHECK_FIELD_IGNORE);
 
   /* Read statistics from the statistical table table_stats */
-  Table_statistics *read_stats= new_stats_cb->get()->table_stats;
+  Table_statistics *read_stats= new_stats_cb.get()->table_stats;
   stat_table= stat_tables[TABLE_STAT].table;
   Table_stat table_stat(stat_table, table);
   table_stat.set_key_fields();
@@ -2932,7 +2925,7 @@ int read_statistics_for_table(THD *thd, TABLE *table, TABLE_LIST *stat_tables,
     column_stat.get_column_stat_values();
     total_hist_size+= table_field->read_stats->histogram.get_size();
   }
-  new_stats_cb->get()->total_hist_size= total_hist_size;
+  new_stats_cb.get()->total_hist_size= total_hist_size;
 
   /* Read statistics from the statistical table index_stats */
   stat_table= stat_tables[INDEX_STAT].table;
@@ -2995,10 +2988,9 @@ int read_statistics_for_table(THD *thd, TABLE *table, TABLE_LIST *stat_tables,
   }
   if (thd->variables.optimizer_use_condition_selectivity > 3)
     (void) read_histograms_for_table(thd, table, stat_tables,
-                                     new_stats_cb->get());
+                                     new_stats_cb.get());
 
-  new_stats_cb->get()->end_stats_load();
-  delete table_share->stats_cb;
+  new_stats_cb->end_stats_load();
   table_share->stats_cb= new_stats_cb;
 
   DBUG_RETURN(0);
@@ -3012,10 +3004,11 @@ int read_statistics_for_table(THD *thd, TABLE *table, TABLE_LIST *stat_tables,
 
 void delete_stat_values_for_table_share(TABLE_SHARE *table_share)
 {
-  auto stats_cb_copy= table_share->stats_cb;
-  if (!stats_cb_copy || !stats_cb_copy->get())
+  //OLEGS: auto stats_cb_copy= table_share->stats_cb;
+  //if (!stats_cb_copy || !stats_cb_copy->get())
+  if (!table_share->stats_cb)
     return;
-  Table_statistics *table_stats= stats_cb_copy->get()->table_stats;
+  Table_statistics *table_stats= table_share->stats_cb->table_stats;
   if (!table_stats)
     return;
 
@@ -3169,8 +3162,7 @@ dump_stats_from_share_to_table(TABLE *table)
     The mutex is acquired at read_statistics_for_tables() which calls this
     function
   */
-  delete table->stats_cb;
-  table->stats_cb= new Shared_ptr<TABLE_STATISTICS_CB>(*table_share->stats_cb);
+  table->stats_cb= table_share->stats_cb;
   KEY *key_info= table_share->key_info;
   KEY *key_info_end= key_info + table_share->keys;
   KEY *table_key_info= table->key_info;
@@ -3207,14 +3199,14 @@ read_statistics_for_tables(THD *thd, TABLE_LIST *tables, bool force_reload)
       if (table_share->table_category == TABLE_CATEGORY_USER)
       {
         mysql_mutex_lock(&table_share->LOCK_share);
-        if (!force_reload && table_share->stats_cb->get()->stats_are_ready())
+        if (!force_reload && table_share->stats_cb->stats_are_ready())
         {
           if (!tl->table->stats_is_read)
             dump_stats_from_share_to_table(tl->table);
-          if (table_share->stats_cb->get()->histograms_are_ready() ||
+          if (table_share->stats_cb->histograms_are_ready() ||
               thd->variables.optimizer_use_condition_selectivity <= 3)
           {
-              mysql_mutex_unlock(&table_share->LOCK_share);
+            mysql_mutex_unlock(&table_share->LOCK_share);
             continue;
           }
         }
@@ -3689,7 +3681,7 @@ void set_statistics_for_table(THD *thd, TABLE *table)
     is running
   */
 
-  Shared_ptr<TABLE_STATISTICS_CB> stats_cb(*table->s->stats_cb);
+  Shared_ptr<TABLE_STATISTICS_CB> stats_cb(table->s->stats_cb);
   DBUG_ASSERT(stats_cb);
 
   Table_statistics *read_stats= stats_cb->table_stats;

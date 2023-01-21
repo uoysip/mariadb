@@ -762,7 +762,7 @@ struct TABLE_SHARE
   uint	*blob_field;			/* Index to blobs in Field arrray*/
   LEX_CUSTRING vcol_defs;              /* definitions of generated columns */
 
-  Shared_ptr<TABLE_STATISTICS_CB> *stats_cb= nullptr;
+  Shared_ptr<TABLE_STATISTICS_CB> stats_cb;
 
   uchar	*default_values;		/* row with default values */
   LEX_CSTRING comment;			/* Comment about table */
@@ -1566,11 +1566,11 @@ public:
   */
   Item *notnull_cond;
 
-  Shared_ptr<TABLE_STATISTICS_CB> *stats_cb= nullptr;
+  Shared_ptr<TABLE_STATISTICS_CB> stats_cb;
 
   inline void reset()
   {
-    delete stats_cb;
+    stats_cb.reset();
     bzero((void *) this, sizeof(*this));
   }
   void init(THD *thd, TABLE_LIST *tl);
@@ -1797,8 +1797,7 @@ public:
   /* Specific cleanup steps required during the TABLE destruction */
   void destroy()
   {
-    delete stats_cb;
-    stats_cb= nullptr;
+    stats_cb.reset();
   }
 
   ulonglong vers_start_id() const;
