@@ -4612,7 +4612,7 @@ innobase_commit(
 
 		trx_mark_sql_stat_end(trx);
 		if (UNIV_UNLIKELY(trx->error_state != DB_SUCCESS)) {
-			trx_rollback_for_mysql(trx);
+			trx->error_state = DB_SUCCESS;
 			DBUG_RETURN(1);
 		}
 	}
@@ -17022,7 +17022,7 @@ innobase_xa_prepare(
 
 		trx_mark_sql_stat_end(trx);
 		if (UNIV_UNLIKELY(trx->error_state != DB_SUCCESS)) {
-			trx_rollback_for_mysql(trx);
+			trx->error_state = DB_SUCCESS;
 			return 1;
 		}
 	}
