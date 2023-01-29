@@ -12920,7 +12920,7 @@ double JOIN_TAB::scan_time()
 ha_rows JOIN_TAB::get_examined_rows()
 {
   double examined_rows;
-  SQL_SELECT *sel= filesort? filesort->select : this->select;
+  const SQL_SELECT *sel= get_sql_select();
 
   if (sel && sel->quick && use_quick != 2)
     examined_rows= (double)sel->quick->records;
@@ -25759,13 +25759,12 @@ bool JOIN_TAB::save_explain_data(Explain_table_access *eta,
   eta->key.clear();
   eta->quick_info= NULL;
 
-  SQL_SELECT *tab_select;
   /* 
     We assume that if this table does pre-sorting, then it doesn't do filtering
     with SQL_SELECT.
   */
   DBUG_ASSERT(!(select && filesort));
-  tab_select= (filesort)? filesort->select : select;
+  const SQL_SELECT *tab_select= get_sql_select();
 
   if (filesort)
   {
