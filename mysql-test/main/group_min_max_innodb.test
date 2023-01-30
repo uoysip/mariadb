@@ -266,6 +266,8 @@ let query=
 SELECT t1.a
 FROM (SELECT a FROM t2 GROUP BY a ORDER BY COUNT(DISTINCT b) LIMIT 1) dt
 JOIN t1 ON dt.a=t1.b;
+--replace_column 9 #
+eval EXPLAIN $query;
 eval $query;
 
 DROP TABLES t1, t2;
