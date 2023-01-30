@@ -259,7 +259,7 @@ static inline int safe_strcpy(char *dst, size_t dst_size, const char *src)
 static inline int safe_strcat(char *dst, size_t dst_size, const char *src)
 {
   size_t init_len= strlen(dst);
-  if (unlikely(init_len >= dst_size - 1))
+  if (init_len >= dst_size - 1)
     return 1;
   return safe_strcpy(dst + init_len, dst_size - init_len, src);
 }
