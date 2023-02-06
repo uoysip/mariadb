@@ -1571,7 +1571,8 @@ inline bool buf_pool_t::withdraw_blocks()
 			ulint n_flushed = buf_flush_LRU(
 				std::max<ulint>(withdraw_target
 						- UT_LIST_GET_LEN(withdraw),
-						srv_LRU_scan_depth));
+						srv_LRU_scan_depth),
+				true);
 			buf_flush_wait_batch_end_acquiring_mutex(true);
 
 			if (n_flushed) {
