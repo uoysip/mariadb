@@ -248,3 +248,14 @@ SELECT NEXTVAL(s);
 NEXTVAL(s)
 1
 DROP SEQUENCE s;
+create sequence s maxvalue 12345;
+show create sequence s;
+Table	Create Table
+s	CREATE SEQUENCE `s` start with 1 minvalue 1 maxvalue 12345 increment by 1 cache 1000 nocycle ENGINE=MyISAM
+alter sequence s maxvalue 123456789012345678901234;
+Warnings:
+Note	1292	Truncated incorrect INTEGER value: 'MAXVALUE'
+show create sequence s;
+Table	Create Table
+s	CREATE SEQUENCE `s` start with 1 minvalue 1 maxvalue 9223372036854775806 increment by 1 cache 1000 nocycle ENGINE=MyISAM
+drop sequence s;

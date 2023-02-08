@@ -161,3 +161,13 @@ CREATE SEQUENCE s;
 ALTER TABLE s ORDER BY cache_size;
 SELECT NEXTVAL(s);
 DROP SEQUENCE s;
+
+#
+# MDEV-28152 Features for sequence
+#
+
+create sequence s maxvalue 12345;
+show create sequence s;
+alter sequence s maxvalue 123456789012345678901234;
+show create sequence s;
+drop sequence s;
