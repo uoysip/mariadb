@@ -284,7 +284,8 @@ ha_federatedx_select_handler::ha_federatedx_select_handler(
   select_lex->print(thd, &query,
                     enum_query_type(QT_VIEW_INTERNAL |
                                     QT_ITEM_ORIGINAL_FUNC_NULLIF |
-                                    QT_PARSABLE));
+                                    QT_PARSABLE |
+                                    QT_NO_DATA_EXPANSION));
 }
 
 ha_federatedx_select_handler::ha_federatedx_select_handler(
@@ -296,7 +297,8 @@ ha_federatedx_select_handler::ha_federatedx_select_handler(
   lex_unit->print(&query,
                   enum_query_type(QT_VIEW_INTERNAL |
                                   QT_ITEM_ORIGINAL_FUNC_NULLIF |
-                                  QT_PARSABLE));
+                                  QT_PARSABLE |
+                                  QT_NO_DATA_EXPANSION));
 }
 
 ha_federatedx_select_handler::ha_federatedx_select_handler(
@@ -308,7 +310,8 @@ ha_federatedx_select_handler::ha_federatedx_select_handler(
   select_lex->print(thd, &query,
                     enum_query_type(QT_VIEW_INTERNAL |
                                     QT_ITEM_ORIGINAL_FUNC_NULLIF |
-                                    QT_PARSABLE));
+                                    QT_PARSABLE |
+                                    QT_NO_DATA_EXPANSION));
 }
 
 int federatedx_handler_base::init_scan_()

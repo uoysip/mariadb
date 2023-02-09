@@ -217,7 +217,7 @@ select * from (select * from t1 where t1.a=1)q	{
             }
           },
           {
-            "expanded_query": "/* select#1 */ select t1.a AS a,t1.b AS b from (/* select#2 */ select t1.a AS a,t1.b AS b from t1 where t1.a = 1) q"
+            "expanded_query": "/* select#1 */ select q.a AS a,q.b AS b from (/* select#2 */ select t1.a AS a,t1.b AS b from t1 where t1.a = 1) q"
           }
         ]
       }
@@ -4440,7 +4440,7 @@ explain select * from (select rand() from t1)q	{
             }
           },
           {
-            "expanded_query": "/* select#1 */ select rand() AS `rand()` from (/* select#2 */ select rand() AS `rand()` from t1) q"
+            "expanded_query": "/* select#1 */ select q.`rand()` AS `rand()` from (/* select#2 */ select rand() AS `rand()` from t1) q"
           }
         ]
       }

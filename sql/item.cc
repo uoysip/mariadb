@@ -10834,6 +10834,14 @@ table_map Item_direct_view_ref::not_null_tables() const
    return get_null_ref_table()->map;
 }
 
+void Item_direct_view_ref::print(String *str, enum_query_type query_type)
+{
+  if (view->derived && !view->merged)
+    Item_ident::print(str, query_type);
+  else
+    Item_ref::print(str, query_type);
+}
+
 /*
   we add RAND_TABLE_BIT to prevent moving this item from HAVING to WHERE
 */

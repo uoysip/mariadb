@@ -341,8 +341,8 @@ ENGINE="FEDERATED" DEFAULT CHARSET=latin1
 CONNECTION='mysql://root@127.0.0.1:$SLAVE_MYPORT/federated/t1';
 
 use federated;
-# SELECT * FROM (SELECT * FROM (SELECT * FROM (SELECT * FROM t1 where id=3) dt3
-#  WHERE id=2) dt2) dt;
+SELECT * FROM (SELECT * FROM (SELECT * FROM (SELECT * FROM t1 where id=3) dt3
+ WHERE id=2) dt2) dt;
 
 connection slave;
 CREATE TABLE federated.t10 (a INT,b INT);
@@ -364,10 +364,10 @@ ENGINE="FEDERATED" DEFAULT CHARSET=latin1
 CONNECTION='mysql://root@127.0.0.1:$SLAVE_MYPORT/federated/t11';
 
 use federated;
-# SELECT * FROM t10 LEFT JOIN
-#  (t11, (SELECT * FROM (SELECT * FROM (SELECT * FROM t1 where id=3) dt3
-#    WHERE id=2) dt2) dt
-#  ) ON t10.a=t11.a;
+SELECT * FROM t10 LEFT JOIN
+ (t11, (SELECT * FROM (SELECT * FROM (SELECT * FROM t1 where id=3) dt3
+   WHERE id=2) dt2) dt
+ ) ON t10.a=t11.a;
 
 DROP TABLES federated.t1, federated.t2, federated.t3, federated.t10,
   federated.t11;

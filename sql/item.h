@@ -6211,6 +6211,7 @@ public:
   Item *field_transformer_for_having_pushdown(THD *, uchar *) override
   { return this; }
   Item *remove_item_direct_ref() override { return this; }
+  void print(String *str, enum_query_type query_type) override;
 };
 
 
