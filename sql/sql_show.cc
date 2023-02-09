@@ -2694,12 +2694,29 @@ static int show_create_sequence(THD *thd, TABLE_LIST *table_list,
 
   packet->append(STRING_WITH_LEN("CREATE SEQUENCE "));
   append_identifier(thd, packet, &alias);
+  /* Do not show " as <type>" in oracle mode as it is not supported:
+     https://docs.oracle.com/en/database/oracle/oracle-database/21/sqlrf/CREATE-SEQUENCE.html
+  */
+  if (!(sql_mode & MODE_ORACLE))
+  {
+    packet->append(STRING_WITH_LEN(" as "));
+    packet->append(seq->value_type_handler()->name().lex_cstring());
+  }
   packet->append(STRING_WITH_LEN(" start with "));
-  packet->append_longlong(seq->start);
+  if (seq->is_unsigned)
+    packet->append_ulonglong(seq->start);
+  else
+    packet->append_longlong(seq->start);
   packet->append(STRING_WITH_LEN(" minvalue "));
-  packet->append_longlong(seq->min_value);
+  if (seq->is_unsigned)
+    packet->append_ulonglong(seq->min_value);
+  else
+    packet->append_longlong(seq->min_value);
   packet->append(STRING_WITH_LEN(" maxvalue "));
-  packet->append_longlong(seq->max_value);
+  if (seq->is_unsigned)
+    packet->append_ulonglong(seq->max_value);
+  else
+    packet->append_longlong(seq->max_value);
   packet->append(STRING_WITH_LEN(" increment by "));
   packet->append_longlong(seq->increment);
   if (seq->cache)
