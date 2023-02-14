@@ -864,6 +864,8 @@ static void write_footer(FILE *sql_file)
 
     check_io(sql_file);
   }
+  if (sql_file)
+    fflush(sql_file);
 } /* write_footer */
 
 
