@@ -2051,11 +2051,11 @@ af_get_pct_for_lsn(
 buf_flush_page_cleaner() if innodb_max_dirty_pages_pct_lwm>0
 and innodb_adaptive_flushing=ON.
 Based on various factors it decides if there is a need to do flushing.
-@return number of pages recommended to be flushed
 @param last_pages_in  number of pages flushed in previous batch
 @param oldest_lsn     buf_pool.get_oldest_modification(0)
 @param dirty_blocks   UT_LIST_GET_LEN(buf_pool.flush_list)
-@param dirty_pct      100*flush_list.count / (LRU.count + free.count) */
+@param dirty_pct      100*flush_list.count / (LRU.count + free.count)
+@return number of pages recommended to be flushed, in 0.1 seconds */
 static ulint page_cleaner_flush_pages_recommendation(ulint last_pages_in,
                                                      lsn_t oldest_lsn,
                                                      ulint dirty_blocks,
@@ -2082,7 +2082,7 @@ static ulint page_cleaner_flush_pages_recommendation(ulint last_pages_in,
 			dirty_pct /= max_pct;
 		}
 
-		n_pages = ulint(dirty_pct * double(srv_io_capacity));
+		n_pages = ulint(dirty_pct * .1 * double(srv_io_capacity));
 		if (n_pages < dirty_blocks) {
 			n_pages= std::min<ulint>(srv_io_capacity, dirty_blocks);
 		}
@@ -2234,7 +2234,7 @@ furious_flush:
       my_cond_timedwait(&buf_pool.do_flush_list,
                         &buf_pool.flush_list_mutex.m_mutex, &abstime);
 
-    set_timespec(abstime, 1);
+    set_timespec_nsec(abstime, 100000000ULL/* 0.1 s*/);
 
     lsn_t soft_lsn_limit= buf_flush_async_lsn;
     lsn_limit= buf_flush_sync_lsn;
@@ -2332,7 +2332,7 @@ unemployed:
     }
     else if (idle_flush || !srv_adaptive_flushing)
     {
-      n= srv_io_capacity;
+      n= srv_io_capacity / 10;
       n_flushed= buf_flush_list(n);
 try_checkpoint:
       if (n_flushed)
