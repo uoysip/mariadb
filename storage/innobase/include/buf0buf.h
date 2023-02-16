@@ -782,11 +782,22 @@ public:
   it from buf_pool.flush_list */
   inline void write_complete(bool temporary);
 
+  /** Status of flush() */
+  enum flush_status
+  {
+    /** the page was submitted to be written */
+    FLUSH_WRITTEN= 0,
+    /** the flush was skipped due to a locking conflict */
+    FLUSH_SKIPPED,
+    /** the page was freed without writing it */
+    FLUSH_FREED,
+  };
+
   /** Write a flushable page to a file. buf_pool.mutex must be held.
   @param evict       whether to evict the page on write completion
   @param space       tablespace
   @return whether the page was flushed and buf_pool.mutex was released */
-  inline bool flush(bool evict, fil_space_t *space);
+  inline flush_status flush(bool evict, fil_space_t *space);
 
   /** Notify that a page in a temporary tablespace has been modified. */
   void set_temp_modified()
@@ -1542,13 +1553,12 @@ public:
   ulint n_flush_LRU_;
   /** broadcast when n_flush_LRU reaches 0; protected by mutex */
   pthread_cond_t done_flush_LRU;
-  /** Number of pending flush_list flush; protected by mutex */
-  ulint n_flush_list_;
-  /** broadcast when n_flush_list reaches 0; protected by mutex */
+  /** whether a flush_list batch is active; protected by flush_list_mutex */
+  bool flush_list_active;
+  /** broadcast when a batch completes; protected by flush_list_mutex */
   pthread_cond_t done_flush_list;
 
   TPOOL_SUPPRESS_TSAN ulint n_flush_LRU() const { return n_flush_LRU_; }
-  TPOOL_SUPPRESS_TSAN ulint n_flush_list() const { return n_flush_list_; }
 
 	/** @name General fields */
 	/* @{ */
@@ -1722,7 +1732,8 @@ public:
   alignas(CPU_LEVEL1_DCACHE_LINESIZE) mysql_mutex_t flush_list_mutex;
   /** "hazard pointer" for flush_list scans; protected by flush_list_mutex */
   FlushHp flush_hp;
-  /** modified blocks (a subset of LRU) */
+  /** possibly modified persistent pages (a subset of LRU);
+  buf_dblwr.pending_writes() is approximately COUNT(is_write_fixed()) */
   UT_LIST_BASE_NODE_T(buf_page_t) flush_list;
 private:
   /** whether the page cleaner needs wakeup from indefinite sleep */
@@ -1755,9 +1766,6 @@ public:
     mysql_mutex_assert_owner(&flush_list_mutex);
     last_activity_count= activity_count;
   }
-
-  // n_flush_LRU() + n_flush_list()
-  // is approximately COUNT(is_write_fixed()) in flush_list
 
 	unsigned	freed_page_clock;/*!< a sequence number used
 					to count the number of buffer
@@ -1847,14 +1855,10 @@ public:
     if (n_pend_reads)
       return true;
     mysql_mutex_lock(&mutex);
-    const bool any_pending{n_flush_LRU_ || n_flush_list_};
+    const bool any_pending= n_flush_LRU_ || flush_list_active ||
+      buf_dblwr.pending_writes();
     mysql_mutex_unlock(&mutex);
     return any_pending;
-  }
-  /** @return total amount of pending I/O */
-  ulint io_pending() const
-  {
-    return n_pend_reads + n_flush_LRU() + n_flush_list();
   }
 
 private:
