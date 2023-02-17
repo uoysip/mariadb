@@ -7802,3 +7802,303 @@ Item *Item_equal::multiple_equality_transformer(THD *thd, uchar *arg)
     break;
   }
 }
+
+
+template<typename T>
+Item* do_date_conds_transformation(THD *thd, T *item)
+{
+  Date_cmp_func_rewriter rwr(thd, item);
+  Item *new_item= rwr.get_rewrite_result();
+  if (new_item != item)
+  {
+    Json_writer_object trace_wrapper(thd);
+    trace_wrapper.add("transformation", "date_conds_into_sargeable")
+                 .add("before", item)
+                 .add("after", new_item);
+  }
+  return new_item;
+}
+
+
+Date_cmp_func_rewriter::Date_cmp_func_rewriter(THD* thd,
+                                               Item_func_eq *item_func) :
+  thd(thd),
+  result(item_func)
+{
+  if (!check_cond_match_and_prepare(item_func))
+    return;
+  /*
+    This is an equality. Do a rewrite like this:
+    "YEAR(col) = val"  ->  col >= YEAR_START(val) AND col<=YEAR_END(val)
+  */
+  Item *start_const, *end_const;
+  if (!(start_const= create_start_bound()) || !(end_const= create_end_bound()))
+    return;
+
+  Item *col_gt, *col_lt;
+  if (!(col_gt= create_cmp_func(Item_func::GE_FUNC, field_ref, start_const)) ||
+      !(col_lt= create_cmp_func(Item_func::LE_FUNC, field_ref, end_const)))
+    return;
+
+  Item *new_cond;
+  if (!(new_cond= new (thd->mem_root) Item_cond_and(thd, col_gt, col_lt)))
+    return;
+  if (!new_cond->fix_fields(thd, &new_cond))
+    result= new_cond;
+}
+
+
+Date_cmp_func_rewriter::Date_cmp_func_rewriter(THD* thd,
+                                               Item_func_ge *item_func) :
+  thd(thd),
+  result(item_func)
+{
+  if (!check_cond_match_and_prepare(item_func))
+    return;
+  rewrite_le_gt_lt_ge();
+}
+
+
+void Date_cmp_func_rewriter::rewrite_le_gt_lt_ge()
+{
+  if (rewrite_func_type == Item_func::LE_FUNC ||
+      rewrite_func_type == Item_func::GT_FUNC)
+  {
+    const_value= create_end_bound();
+  }
+  else if (rewrite_func_type == Item_func::LT_FUNC ||
+           rewrite_func_type == Item_func::GE_FUNC)
+  {
+    const_value= create_start_bound();
+  }
+  if (!const_value)
+    return;
+  Item *repl= create_cmp_func(rewrite_func_type, field_ref, const_value);
+  if (!repl)
+    return;
+  if (!repl->fix_fields(thd, &repl))
+    result= repl;
+}
+
+
+Date_cmp_func_rewriter::Date_cmp_func_rewriter(THD* thd,
+                                               Item_func_lt *item_func) :
+  thd(thd),
+  result(item_func)
+{
+  if (!check_cond_match_and_prepare(item_func))
+    return;
+  rewrite_le_gt_lt_ge();
+}
+
+
+Date_cmp_func_rewriter::Date_cmp_func_rewriter(THD* thd,
+                                               Item_func_gt *item_func) :
+  thd(thd),
+  result(item_func)
+{
+  if (!check_cond_match_and_prepare(item_func))
+    return;
+  rewrite_le_gt_lt_ge();
+}
+
+
+Date_cmp_func_rewriter::Date_cmp_func_rewriter(THD* thd,
+                                               Item_func_le*item_func) :
+  thd(thd),
+  result(item_func)
+{
+  if (!check_cond_match_and_prepare(item_func))
+    return;
+  rewrite_le_gt_lt_ge();
+}
+
+
+bool Date_cmp_func_rewriter::check_cond_match_and_prepare(Item_func *item_func)
+{
+  if (thd->lex->is_ps_or_view_context_analysis())
+    return false;
+
+  Item **args= item_func->arguments();
+  rewrite_func_type= item_func->functype();
+  bool condition_matches= false;
+  const Type_handler *comparison_type= ((Item_bool_rowready_func2*)item_func)->
+                                       get_comparator()->compare_type_handler();
+
+  /*
+    Check if this is "YEAR(indexed_col) CMP basic_const_item" or
+    "DATE(indexed_col) CMP basic_const_item"
+  */
+  if ((field_ref= is_date_rounded_field(args[0], comparison_type,
+                                        &argument_func_type)) &&
+      args[1]->basic_const_item())
+  {
+    const_value= args[1];
+    condition_matches= true;
+  }
+  else
+  /*
+    Check if this is "basic_const_item CMP YEAR(indexed_col)" or
+    basic_const_item CMP YEAR(indexed_col)
+  */
+  if ((field_ref= is_date_rounded_field(args[1], comparison_type,
+                                        &argument_func_type)) &&
+      args[0]->basic_const_item())
+  {
+    /*
+      Ok, the condition has form like "const<YEAR(const)". Turn it around
+      to be "YEAR(col)>const"
+    */
+    const_value= args[0];
+
+    /*
+      This cast is safe because all Item classes that have func_type that we
+      checked for, inherit from that function.
+    */
+    rewrite_func_type= ((Item_bool_func2_with_rev*)item_func)->rev_functype();
+    condition_matches= true;
+  }
+  return condition_matches;
+}
+
+/*
+  Check if the passed item is YEAR(key_col) or DATE(key_col).
+
+  Also
+  - key_col must be covered by an index usable by the current query
+  - key_col must have a DATE[TIME] type (TIMESTAMP is not supported, see below)
+  - The value of the YEAR(..) or DATE(..) function must be compared using an a
+    appropriate comparison_type.
+
+  @param item             IN   Item to check
+  @param comparison_type  IN   Which datatype is used to compare the item value
+  @param out_func_type    OUT  Function (is it YEAR or DATE)
+
+  @return
+     key_col  if the check suceeded
+     NULL     otherwise
+*/
+Item_field *Date_cmp_func_rewriter::is_date_rounded_field(Item* item,
+                                  const Type_handler *comparison_type,
+                                  Item_func::Functype *out_func_type) const
+{
+  if (item->type() != Item::FUNC_ITEM)
+    return nullptr;
+
+  Item_func::Functype func_type= ((Item_func*)item)->functype();
+  bool function_ok= false;
+  switch (func_type) {
+  case Item_func::YEAR_FUNC:
+    // The value of YEAR(x) must be compared as integer
+    if (comparison_type == &type_handler_slonglong)
+      function_ok= true;
+    break;
+  case Item_func::DATE_FUNC:
+    // The value of DATE(x) must be compared as dates.
+    if (comparison_type == &type_handler_newdate)
+      function_ok= true;
+    break;
+  default:
+    ;// do nothing
+  }
+
+  if (function_ok)
+  {
+    Item* arg= ((Item_func*)item)->arguments()[0];
+    // Check if the argument is a column that's covered by some index
+    if (arg->real_item()->type() == Item::FIELD_ITEM)
+    {
+      Item_field *item_field= (Item_field*)(arg->real_item());
+      const key_map * used_indexes=
+        &item_field->field->table->keys_in_use_for_query;
+
+      /*
+        Don't do the rewrite for TIMESTAMP datatype. In order to handle
+        timestamp, we will need to support leap seconds, and MDEV-13995
+        should be fixed too.
+      */
+      enum_field_types field_type= item_field->field_type();
+      if ((field_type == MYSQL_TYPE_DATE ||
+           field_type == MYSQL_TYPE_DATETIME ||
+           field_type == MYSQL_TYPE_NEWDATE) &&
+          item_field->field->part_of_key.is_overlapping(*used_indexes))
+      {
+        *out_func_type= func_type;
+        return item_field;
+      }
+    }
+  }
+  return nullptr;
+}
+
+
+Item *Date_cmp_func_rewriter::create_start_bound()
+{
+  Item *res;
+  switch (argument_func_type) {
+  case Item_func::YEAR_FUNC:
+    res= new (thd->mem_root) Item_func_year_start(thd, const_value);
+    break;
+  case Item_func::DATE_FUNC:
+    if (field_ref->field->type() == MYSQL_TYPE_DATE)
+      res= const_value;
+    else
+      res= new (thd->mem_root) Item_func_day_start(thd, const_value);
+    break;
+  default:
+    DBUG_ASSERT(0);
+    res= nullptr;
+    break;
+  }
+  return res;
+}
+
+
+Item *Date_cmp_func_rewriter::create_end_bound()
+{
+  Item *res;
+  switch (argument_func_type) {
+  case Item_func::YEAR_FUNC:
+    res= new (thd->mem_root) Item_func_year_end(thd, const_value);
+    break;
+  case Item_func::DATE_FUNC:
+    if (field_ref->field->type() == MYSQL_TYPE_DATE)
+      res= const_value;
+    else
+      res= new (thd->mem_root) Item_func_day_end(thd, const_value);
+    break;
+  default:
+    DBUG_ASSERT(0);
+    res= nullptr;
+    break;
+  }
+  return res;
+}
+
+
+/*
+  Create an Item for "arg1 $CMP arg2", where $CMP is specified by func_type.
+*/
+Item *Date_cmp_func_rewriter::create_cmp_func(Item_func::Functype func_type,
+                                              Item *arg1, Item *arg2)
+{
+  Item *res;
+  switch (func_type) {
+    case Item_func::GE_FUNC:
+      res= new (thd->mem_root) Item_func_ge(thd, arg1, arg2);
+      break;
+    case Item_func::GT_FUNC:
+      res= new (thd->mem_root) Item_func_gt(thd, arg1, arg2);
+      break;
+    case Item_func::LE_FUNC:
+      res= new (thd->mem_root) Item_func_le(thd, arg1, arg2);
+      break;
+    case Item_func::LT_FUNC:
+      res= new (thd->mem_root) Item_func_lt(thd, arg1, arg2);
+      break;
+    default:
+      DBUG_ASSERT(0);
+      res= NULL;
+  }
+  return res;
+}
