@@ -5844,28 +5844,31 @@ ha_innobase::open(const char* name, int, uint)
 
 	DEBUG_SYNC(thd, "ib_open_after_dict_open");
 
-  /* If the table does not exist and we are trying to import, create a
-     "bare" table similar to the effects of CREATE TABLE followed by ALTER
-     TABLE ... DISCARD TABLESPACE. */
-  if (!ib_table && thd_ddl_options(thd)->import_tablespace())
-  {
-    HA_CREATE_INFO create_info;
-    create_info.init();
-    trx_t *trx= innobase_trx_allocate(thd);
-    trx_start_for_ddl(trx);
-    lock_sys_tables(trx);
-    row_mysql_lock_data_dictionary(trx);
-    create(name, table, &create_info, true, trx);
-    trx->commit();
-    row_mysql_unlock_data_dictionary(trx);
-    trx->free();
-    ib_table = open_dict_table(name, norm_name, is_part,
-                               DICT_ERR_IGNORE_TABLESPACE);
-    DEBUG_SYNC(thd, "ib_open_after_create_and_open_for_import");
-  }
+	/* If the table does not exist and we are trying to import, create a
+	"bare" table similar to the effects of CREATE TABLE followed by ALTER
+	TABLE ... DISCARD TABLESPACE. */
+	if (!ib_table && thd_ddl_options(thd)->import_tablespace())
+	{
+		HA_CREATE_INFO create_info;
+		create_info.init();
+		update_create_info_from_table(&create_info, table);
+		trx_t *trx= innobase_trx_allocate(thd);
+		trx_start_for_ddl(trx);
+		if (lock_sys_tables(trx) == DB_SUCCESS)
+		{
+			row_mysql_lock_data_dictionary(trx);
+			create(name, table, &create_info, true, trx);
+			trx->commit();
+			row_mysql_unlock_data_dictionary(trx);
+		} else
+			trx->rollback();
+		trx->free();
+		ib_table = open_dict_table(name, norm_name, is_part,
+															 DICT_ERR_IGNORE_TABLESPACE);
+		DEBUG_SYNC(thd, "ib_open_after_create_and_open_for_import");
+	}
 
-  if (NULL == ib_table) {
-
+	if (NULL == ib_table) {
 		if (is_part) {
 			sql_print_error("Failed to open table %s.\n",
 					norm_name);
@@ -10589,7 +10592,7 @@ create_table_info_t::create_table_def()
 	}
 
   /* Assume the tablespace is not available until we are able to
-     import it.*/
+  import it.*/
   if (thd_ddl_options(m_thd)->import_tablespace())
     table->file_unreadable = true;
 
@@ -11607,7 +11610,7 @@ index_bad:
 	}
 
   /* If we are trying to import a tablespace, mark tablespace as
-     discarded. */
+  discarded. */
   if (thd_ddl_options(m_thd)->import_tablespace())
     m_flags2 |= DICT_TF2_DISCARDED;
 

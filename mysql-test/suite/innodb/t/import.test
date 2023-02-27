@@ -1,19 +1,6 @@
 --source include/have_innodb.inc
 let $MYSQLD_DATADIR = `SELECT @@datadir`;
 
-# existing workflow
-CREATE TABLE t1 (a int) ENGINE=InnoDB;
-INSERT INTO t1 VALUES(42);
-CREATE TABLE t2 LIKE t1;
-ALTER TABLE t2 DISCARD TABLESPACE;
-FLUSH TABLES t1 FOR EXPORT;
---copy_file $MYSQLD_DATADIR/test/t1.cfg $MYSQLD_DATADIR/test/t2.cfg
---copy_file $MYSQLD_DATADIR/test/t1.ibd $MYSQLD_DATADIR/test/t2.ibd
-UNLOCK TABLES;
-ALTER TABLE t2 IMPORT TABLESPACE;
-SELECT * from t2;
-DROP TABLE t1, t2;
-
 --echo #
 --echo # MDEV-26137 ALTER TABLE IMPORT enhancement
 --echo #
@@ -64,3 +51,78 @@ DROP TABLE t2;
 # attempt to import when there's no tablespace
 --error ER_NO_SUCH_TABLE
 ALTER TABLE t2 IMPORT TABLESPACE;
+
+# various row formats
+CREATE TABLE t1 (a int, b varchar(50)) ENGINE=InnoDB ROW_FORMAT=COMPACT;
+INSERT INTO t1 VALUES(42, "hello");
+FLUSH TABLES t1 FOR EXPORT;
+--copy_file $MYSQLD_DATADIR/test/t1.cfg $MYSQLD_DATADIR/test/t2.cfg
+--copy_file $MYSQLD_DATADIR/test/t1.frm $MYSQLD_DATADIR/test/t2.frm
+--copy_file $MYSQLD_DATADIR/test/t1.ibd $MYSQLD_DATADIR/test/t2.ibd
+UNLOCK TABLES;
+ALTER TABLE t2 IMPORT TABLESPACE;
+SELECT * FROM t2;
+DROP TABLE t1, t2;
+
+CREATE TABLE t1 (a int, b varchar(50)) ENGINE=InnoDB ROW_FORMAT=REDUNDANT;
+INSERT INTO t1 VALUES(42, "hello");
+FLUSH TABLES t1 FOR EXPORT;
+--copy_file $MYSQLD_DATADIR/test/t1.cfg $MYSQLD_DATADIR/test/t2.cfg
+--copy_file $MYSQLD_DATADIR/test/t1.frm $MYSQLD_DATADIR/test/t2.frm
+--copy_file $MYSQLD_DATADIR/test/t1.ibd $MYSQLD_DATADIR/test/t2.ibd
+UNLOCK TABLES;
+ALTER TABLE t2 IMPORT TABLESPACE;
+SELECT * FROM t2;
+DROP TABLE t1, t2;
+
+CREATE TABLE t1 (a int, b varchar(50)) ENGINE=InnoDB ROW_FORMAT=COMPRESSED;
+INSERT INTO t1 VALUES(42, "hello");
+FLUSH TABLES t1 FOR EXPORT;
+--copy_file $MYSQLD_DATADIR/test/t1.cfg $MYSQLD_DATADIR/test/t2.cfg
+--copy_file $MYSQLD_DATADIR/test/t1.frm $MYSQLD_DATADIR/test/t2.frm
+--copy_file $MYSQLD_DATADIR/test/t1.ibd $MYSQLD_DATADIR/test/t2.ibd
+UNLOCK TABLES;
+ALTER TABLE t2 IMPORT TABLESPACE;
+SELECT * FROM t2;
+DROP TABLE t1, t2;
+
+# with index
+CREATE TABLE t1 (a int, b varchar(50)) ENGINE=InnoDB;
+CREATE UNIQUE INDEX ai ON t1 (a);
+INSERT INTO t1 VALUES(42, "hello");
+FLUSH TABLES t1 FOR EXPORT;
+--copy_file $MYSQLD_DATADIR/test/t1.cfg $MYSQLD_DATADIR/test/t2.cfg
+--copy_file $MYSQLD_DATADIR/test/t1.frm $MYSQLD_DATADIR/test/t2.frm
+--copy_file $MYSQLD_DATADIR/test/t1.ibd $MYSQLD_DATADIR/test/t2.ibd
+UNLOCK TABLES;
+ALTER TABLE t2 IMPORT TABLESPACE;
+SELECT * FROM t2;
+SHOW INDEX FROM t1;
+SHOW INDEX FROM t2;
+DROP TABLE t1, t2;
+
+#with virtual column index
+CREATE TABLE t1 (a int, b int as (a * a)) ENGINE=InnoDB;
+CREATE UNIQUE INDEX ai ON t1 (b);
+INSERT INTO t1 VALUES(42, default);
+FLUSH TABLES t1 FOR EXPORT;
+--copy_file $MYSQLD_DATADIR/test/t1.cfg $MYSQLD_DATADIR/test/t2.cfg
+--copy_file $MYSQLD_DATADIR/test/t1.frm $MYSQLD_DATADIR/test/t2.frm
+--copy_file $MYSQLD_DATADIR/test/t1.ibd $MYSQLD_DATADIR/test/t2.ibd
+UNLOCK TABLES;
+ALTER TABLE t2 IMPORT TABLESPACE;
+SELECT * FROM t2;
+SHOW INDEX FROM t1;
+SHOW INDEX FROM t2;
+DROP TABLE t1, t2;
+
+# without .cfg
+CREATE TABLE t1 (a int, b varchar(50)) ENGINE=InnoDB;
+INSERT INTO t1 VALUES(42, "hello");
+FLUSH TABLES t1 FOR EXPORT;
+--copy_file $MYSQLD_DATADIR/test/t1.frm $MYSQLD_DATADIR/test/t2.frm
+--copy_file $MYSQLD_DATADIR/test/t1.ibd $MYSQLD_DATADIR/test/t2.ibd
+UNLOCK TABLES;
+ALTER TABLE t2 IMPORT TABLESPACE;
+SELECT * FROM t2;
+DROP TABLE t1, t2;
