@@ -690,6 +690,12 @@ struct FetchIndexRootPages : public AbstractCallback {
 		AbstractCallback(trx, UINT32_MAX),
 		m_table(table), m_index(0, 0) UNIV_NOTHROW { }
 
+  // TODO: Do we need trx?
+	FetchIndexRootPages(const char* table_name, trx_t* trx)
+		:
+		AbstractCallback(trx, UINT32_MAX),
+		m_table(nullptr), m_table_name(table_name), m_index(0, 0) UNIV_NOTHROW { }
+  
 	/** Destructor */
 	~FetchIndexRootPages() UNIV_NOTHROW override = default;
 
@@ -705,15 +711,40 @@ struct FetchIndexRootPages : public AbstractCallback {
 	@retval DB_SUCCESS or error code. */
 	dberr_t operator()(buf_block_t* block) UNIV_NOTHROW override;
 
-	/** Update the import configuration that will be used to import
+  /** Get row format from the header and the root index page. */
+  enum row_type get_row_format(buf_block_t *block)
+  {
+    if (!page_is_comp(block->page.frame))
+      return ROW_TYPE_REDUNDANT;
+    // With full_crc32 we cannot tell between dynamic or compact, and
+    // return default. We cannot simply return dynamic, as the client
+    // of this function will not be able to tell whether it is dynamic
+    // because of this or the other branch below.
+    if (fil_space_t::full_crc32(m_space_flags))
+      return ROW_TYPE_DEFAULT;
+    if (m_space_flags & FSP_FLAGS_MASK_ATOMIC_BLOBS)
+    {
+      if (FSP_FLAGS_GET_ZIP_SSIZE(m_space_flags))
+        return ROW_TYPE_COMPRESSED;
+      else
+        return ROW_TYPE_DYNAMIC;
+    }
+    return ROW_TYPE_COMPACT;
+  }
+
+  /** Update the import configuration that will be used to import
 	the tablespace. */
 	dberr_t build_row_import(row_import* cfg) const UNIV_NOTHROW;
 
 	/** Table definition in server. */
 	const dict_table_t*	m_table;
 
+  const char* m_table_name;
+
 	/** Index information */
 	Index			m_index;
+
+  enum row_type m_row_format;
 };
 
 /** Called for each block as it is read from the file. Check index pages to
@@ -722,7 +753,8 @@ header flags alone.
 
 @param block block to convert, it is not from the buffer pool.
 @retval DB_SUCCESS or error code. */
-dberr_t FetchIndexRootPages::operator()(buf_block_t* block) UNIV_NOTHROW
+dberr_t
+FetchIndexRootPages::operator()(buf_block_t *block) UNIV_NOTHROW
 {
 	if (is_interrupted()) return DB_INTERRUPTED;
 
@@ -3337,6 +3369,38 @@ static dberr_t handle_instant_metadata(dict_table_t *table,
   return DB_SUCCESS;
 }
 
+static dberr_t row_import_read_cfg_internal(const char* filename, THD* thd, row_import& cfg)
+{
+	dberr_t		err;
+
+	FILE*	file = fopen(filename, "rb");
+
+	if (file == NULL) {
+		char	msg[BUFSIZ];
+
+		snprintf(msg, sizeof(msg),
+			 "Error opening '%s', will attempt to import"
+			 " without schema verification", filename);
+
+		ib_senderrf(
+			thd, IB_LOG_LEVEL_WARN, ER_IO_READ_ERROR,
+			(ulong) errno, strerror(errno), msg);
+
+		cfg.m_missing = true;
+
+		err = DB_FAIL;
+	} else
+    {
+
+      cfg.m_missing= false;
+
+      err= row_import_read_meta_data(file, thd, cfg);
+      fclose(file);
+    }
+
+  return (err);
+}
+
 /**
 Read the contents of the <tablename>.cfg file.
 @return DB_SUCCESS or error code. */
@@ -3348,38 +3412,24 @@ row_import_read_cfg(
 	THD*		thd,	/*!< in: session */
 	row_import&	cfg)	/*!< out: contents of the .cfg file */
 {
-	dberr_t		err;
 	char		name[OS_FILE_MAX_PATH];
 
 	cfg.m_table = table;
 
 	srv_get_meta_data_filename(table, name, sizeof(name));
 
-	FILE*	file = fopen(name, "rb");
+  return row_import_read_cfg_internal(name, thd, cfg);
+}
 
-	if (file == NULL) {
-		char	msg[BUFSIZ];
-
-		snprintf(msg, sizeof(msg),
-			 "Error opening '%s', will attempt to import"
-			 " without schema verification", name);
-
-		ib_senderrf(
-			thd, IB_LOG_LEVEL_WARN, ER_IO_READ_ERROR,
-			(ulong) errno, strerror(errno), msg);
-
-		cfg.m_missing = true;
-
-		err = DB_FAIL;
-	} else {
-
-		cfg.m_missing = false;
-
-		err = row_import_read_meta_data(file, thd, cfg);
-		fclose(file);
-	}
-
-	return(err);
+dberr_t get_row_type_from_cfg(const char* dir_path, const char* name, THD* thd, rec_format_enum& result)
+{
+  const table_name_t table_name(const_cast<char*>(name));
+  const char* filename = fil_make_filepath(dir_path, table_name, CFG, dir_path != nullptr);
+  row_import cfg;
+  dberr_t err = row_import_read_cfg_internal(filename, thd, cfg);
+  if (err == DB_SUCCESS)
+    result = dict_tf_get_rec_format(cfg.m_flags);
+  return err;
 }
 
 /** Update the root page numbers and tablespace ID of a table.
@@ -3719,7 +3769,11 @@ page_corrupted:
            && buf_page_is_corrupted(false, readptr, m_space_flags))
     goto page_corrupted;
 
-  err= this->operator()(block);
+  // m_table == nullptr implies we are in the first ddl
+  if (m_table)
+    err= this->operator()(block);
+  else
+    m_row_format = get_row_format(block);
 func_exit:
   free(page_compress_buf);
   return err;
@@ -4051,7 +4105,8 @@ static
 dberr_t
 fil_tablespace_iterate(
 /*===================*/
-	dict_table_t*		table,
+  const char* dir_path,
+	const char*	name,
 	ulint			n_io_buffers,
 	AbstractCallback&	callback)
 {
@@ -4065,18 +4120,8 @@ fil_tablespace_iterate(
 	DBUG_EXECUTE_IF("ib_import_trigger_corruption_1",
 			return(DB_CORRUPTION););
 
-	/* Make sure the data_dir_path is set. */
-	dict_get_and_save_data_dir_path(table);
-
-	ut_ad(!DICT_TF_HAS_DATA_DIR(table->flags) || table->data_dir_path);
-
-	const char *data_dir_path = DICT_TF_HAS_DATA_DIR(table->flags)
-		? table->data_dir_path : nullptr;
-
-	filepath = fil_make_filepath(data_dir_path,
-				     {table->name.m_name,
-				      strlen(table->name.m_name)},
-				     IBD, data_dir_path != nullptr);
+  table_name_t table_name(const_cast<char*>(name));
+	filepath = fil_make_filepath(dir_path, table_name, IBD, dir_path != nullptr);
 	if (!filepath) {
 		return(DB_OUT_OF_MEMORY);
 	} else {
@@ -4089,8 +4134,7 @@ fil_tablespace_iterate(
 		if (!success) {
 			/* The following call prints an error message */
 			os_file_get_last_error(true);
-			ib::error() << "Trying to import a tablespace,"
-				" but could not open the tablespace file "
+			ib::error() << "could not open the tablespace file "
 				    << filepath;
 			ut_free(filepath);
 			return DB_TABLESPACE_NOT_FOUND;
@@ -4201,6 +4245,25 @@ fil_tablespace_iterate(
 	ut_free(block);
 
 	return(err);
+}
+
+static
+dberr_t
+fil_tablespace_iterate(
+/*===================*/
+	dict_table_t*		table,
+	ulint			n_io_buffers,
+	AbstractCallback&	callback)
+{
+	/* Make sure the data_dir_path is set. */
+	dict_get_and_save_data_dir_path(table);
+
+	ut_ad(!DICT_TF_HAS_DATA_DIR(table->flags) || table->data_dir_path);
+
+	const char *data_dir_path = DICT_TF_HAS_DATA_DIR(table->flags)
+		? table->data_dir_path : nullptr;
+
+  return fil_tablespace_iterate(data_dir_path, table->name.m_name, n_io_buffers, callback);
 }
 
 /*****************************************************************//**

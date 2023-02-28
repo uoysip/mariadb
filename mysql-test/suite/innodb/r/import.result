@@ -1,7 +1,7 @@
 #
 # MDEV-26137 ALTER TABLE IMPORT enhancement
 #
-CREATE TABLE t1 (a int) ENGINE=InnoDB;
+CREATE TABLE t1 (a int) ENGINE=InnoDB ROW_FORMAT=DYNAMIC;
 INSERT INTO t1 VALUES(42);
 FLUSH TABLES t1 FOR EXPORT;
 UNLOCK TABLES;
@@ -34,33 +34,6 @@ a
 DROP TABLE t2;
 ALTER TABLE t2 IMPORT TABLESPACE;
 ERROR 42S02: Table 'test.t2' doesn't exist
-CREATE TABLE t1 (a int, b varchar(50)) ENGINE=InnoDB ROW_FORMAT=COMPACT;
-INSERT INTO t1 VALUES(42, "hello");
-FLUSH TABLES t1 FOR EXPORT;
-UNLOCK TABLES;
-ALTER TABLE t2 IMPORT TABLESPACE;
-SELECT * FROM t2;
-a	b
-42	hello
-DROP TABLE t1, t2;
-CREATE TABLE t1 (a int, b varchar(50)) ENGINE=InnoDB ROW_FORMAT=REDUNDANT;
-INSERT INTO t1 VALUES(42, "hello");
-FLUSH TABLES t1 FOR EXPORT;
-UNLOCK TABLES;
-ALTER TABLE t2 IMPORT TABLESPACE;
-SELECT * FROM t2;
-a	b
-42	hello
-DROP TABLE t1, t2;
-CREATE TABLE t1 (a int, b varchar(50)) ENGINE=InnoDB ROW_FORMAT=COMPRESSED;
-INSERT INTO t1 VALUES(42, "hello");
-FLUSH TABLES t1 FOR EXPORT;
-UNLOCK TABLES;
-ALTER TABLE t2 IMPORT TABLESPACE;
-SELECT * FROM t2;
-a	b
-42	hello
-DROP TABLE t1, t2;
 CREATE TABLE t1 (a int, b varchar(50)) ENGINE=InnoDB;
 CREATE UNIQUE INDEX ai ON t1 (a);
 INSERT INTO t1 VALUES(42, "hello");
@@ -93,6 +66,66 @@ SHOW INDEX FROM t2;
 Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Ignored
 t2	0	ai	1	b	A	1	NULL	NULL	YES	BTREE			NO
 DROP TABLE t1, t2;
+CREATE TABLE t1 (a int, b varchar(50)) ENGINE=InnoDB ROW_FORMAT=COMPACT;
+INSERT INTO t1 VALUES(42, "hello");
+FLUSH TABLES t1 FOR EXPORT;
+UNLOCK TABLES;
+ALTER TABLE t2 IMPORT TABLESPACE;
+SHOW CREATE TABLE t2;
+Table	Create Table
+t2	CREATE TABLE `t2` (
+  `a` int(11) DEFAULT NULL,
+  `b` varchar(50) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci ROW_FORMAT=COMPACT
+SELECT * FROM t2;
+a	b
+42	hello
+DROP TABLE t1, t2;
+CREATE TABLE t1 (a int, b varchar(50)) ENGINE=InnoDB ROW_FORMAT=REDUNDANT;
+INSERT INTO t1 VALUES(42, "hello");
+FLUSH TABLES t1 FOR EXPORT;
+UNLOCK TABLES;
+ALTER TABLE t2 IMPORT TABLESPACE;
+SHOW CREATE TABLE t2;
+Table	Create Table
+t2	CREATE TABLE `t2` (
+  `a` int(11) DEFAULT NULL,
+  `b` varchar(50) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci ROW_FORMAT=REDUNDANT
+SELECT * FROM t2;
+a	b
+42	hello
+DROP TABLE t1, t2;
+CREATE TABLE t1 (a int, b varchar(50)) ENGINE=InnoDB ROW_FORMAT=COMPRESSED;
+INSERT INTO t1 VALUES(42, "hello");
+FLUSH TABLES t1 FOR EXPORT;
+UNLOCK TABLES;
+ALTER TABLE t2 IMPORT TABLESPACE;
+SHOW CREATE TABLE t2;
+Table	Create Table
+t2	CREATE TABLE `t2` (
+  `a` int(11) DEFAULT NULL,
+  `b` varchar(50) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci ROW_FORMAT=COMPRESSED
+SELECT * FROM t2;
+a	b
+42	hello
+DROP TABLE t1, t2;
+CREATE TABLE t1 (a int, b varchar(50)) ENGINE=InnoDB ROW_FORMAT=DYNAMIC;
+INSERT INTO t1 VALUES(42, "hello");
+FLUSH TABLES t1 FOR EXPORT;
+UNLOCK TABLES;
+ALTER TABLE t2 IMPORT TABLESPACE;
+SHOW CREATE TABLE t2;
+Table	Create Table
+t2	CREATE TABLE `t2` (
+  `a` int(11) DEFAULT NULL,
+  `b` varchar(50) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci ROW_FORMAT=DYNAMIC
+SELECT * FROM t2;
+a	b
+42	hello
+DROP TABLE t1, t2;
 CREATE TABLE t1 (a int, b varchar(50)) ENGINE=InnoDB;
 INSERT INTO t1 VALUES(42, "hello");
 FLUSH TABLES t1 FOR EXPORT;
@@ -100,7 +133,235 @@ UNLOCK TABLES;
 ALTER TABLE t2 IMPORT TABLESPACE;
 Warnings:
 Warning	1810	IO Read error: (2, No such file or directory) Error opening './test/t2.cfg', will attempt to import without schema verification
+Warning	1810	IO Read error: (2, No such file or directory) Error opening './test/t2.cfg', will attempt to import without schema verification
 SELECT * FROM t2;
 a	b
 42	hello
 DROP TABLE t1, t2;
+CREATE TABLE t1 (a int, b varchar(50)) ENGINE=InnoDB ROW_FORMAT=COMPACT;
+INSERT INTO t1 VALUES(42, "hello");
+FLUSH TABLES t1 FOR EXPORT;
+UNLOCK TABLES;
+ALTER TABLE t2 IMPORT TABLESPACE;
+Warnings:
+Warning	1810	IO Read error: (2, No such file or directory) Error opening './test/t2.cfg', will attempt to import without schema verification
+Warning	1810	IO Read error: (2, No such file or directory) Error opening './test/t2.cfg', will attempt to import without schema verification
+SHOW CREATE TABLE t2;
+Table	Create Table
+t2	CREATE TABLE `t2` (
+  `a` int(11) DEFAULT NULL,
+  `b` varchar(50) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci ROW_FORMAT=COMPACT
+SELECT * FROM t2;
+a	b
+42	hello
+DROP TABLE t1, t2;
+CREATE TABLE t1 (a int, b varchar(50)) ENGINE=InnoDB ROW_FORMAT=REDUNDANT;
+INSERT INTO t1 VALUES(42, "hello");
+FLUSH TABLES t1 FOR EXPORT;
+UNLOCK TABLES;
+ALTER TABLE t2 IMPORT TABLESPACE;
+Warnings:
+Warning	1810	IO Read error: (2, No such file or directory) Error opening './test/t2.cfg', will attempt to import without schema verification
+Warning	1810	IO Read error: (2, No such file or directory) Error opening './test/t2.cfg', will attempt to import without schema verification
+SHOW CREATE TABLE t2;
+Table	Create Table
+t2	CREATE TABLE `t2` (
+  `a` int(11) DEFAULT NULL,
+  `b` varchar(50) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci ROW_FORMAT=REDUNDANT
+SELECT * FROM t2;
+a	b
+42	hello
+DROP TABLE t1, t2;
+CREATE TABLE t1 (a int, b varchar(50)) ENGINE=InnoDB ROW_FORMAT=COMPRESSED;
+INSERT INTO t1 VALUES(42, "hello");
+FLUSH TABLES t1 FOR EXPORT;
+UNLOCK TABLES;
+ALTER TABLE t2 IMPORT TABLESPACE;
+Warnings:
+Warning	1810	IO Read error: (2, No such file or directory) Error opening './test/t2.cfg', will attempt to import without schema verification
+Warning	1810	IO Read error: (2, No such file or directory) Error opening './test/t2.cfg', will attempt to import without schema verification
+SHOW CREATE TABLE t2;
+Table	Create Table
+t2	CREATE TABLE `t2` (
+  `a` int(11) DEFAULT NULL,
+  `b` varchar(50) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci ROW_FORMAT=COMPRESSED
+SELECT * FROM t2;
+a	b
+42	hello
+DROP TABLE t1, t2;
+CREATE TABLE t1 (a int, b varchar(50)) ENGINE=InnoDB ROW_FORMAT=DYNAMIC;
+INSERT INTO t1 VALUES(42, "hello");
+FLUSH TABLES t1 FOR EXPORT;
+UNLOCK TABLES;
+ALTER TABLE t2 IMPORT TABLESPACE;
+Warnings:
+Warning	1810	IO Read error: (2, No such file or directory) Error opening './test/t2.cfg', will attempt to import without schema verification
+Warning	1810	IO Read error: (2, No such file or directory) Error opening './test/t2.cfg', will attempt to import without schema verification
+SHOW CREATE TABLE t2;
+Table	Create Table
+t2	CREATE TABLE `t2` (
+  `a` int(11) DEFAULT NULL,
+  `b` varchar(50) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci ROW_FORMAT=DYNAMIC
+SELECT * FROM t2;
+a	b
+42	hello
+DROP TABLE t1, t2;
+SET GLOBAL innodb_checksum_algorithm=crc32;
+CREATE TABLE t1 (a int, b varchar(50)) ENGINE=InnoDB;
+INSERT INTO t1 VALUES(42, "hello");
+FLUSH TABLES t1 FOR EXPORT;
+UNLOCK TABLES;
+ALTER TABLE t2 IMPORT TABLESPACE;
+SELECT * FROM t2;
+a	b
+42	hello
+DROP TABLE t1, t2;
+CREATE TABLE t1 (a int, b varchar(50)) ENGINE=InnoDB ROW_FORMAT=COMPACT;
+INSERT INTO t1 VALUES(42, "hello");
+FLUSH TABLES t1 FOR EXPORT;
+UNLOCK TABLES;
+ALTER TABLE t2 IMPORT TABLESPACE;
+SHOW CREATE TABLE t2;
+Table	Create Table
+t2	CREATE TABLE `t2` (
+  `a` int(11) DEFAULT NULL,
+  `b` varchar(50) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci ROW_FORMAT=COMPACT
+SELECT * FROM t2;
+a	b
+42	hello
+DROP TABLE t1, t2;
+CREATE TABLE t1 (a int, b varchar(50)) ENGINE=InnoDB ROW_FORMAT=REDUNDANT;
+INSERT INTO t1 VALUES(42, "hello");
+FLUSH TABLES t1 FOR EXPORT;
+UNLOCK TABLES;
+ALTER TABLE t2 IMPORT TABLESPACE;
+SHOW CREATE TABLE t2;
+Table	Create Table
+t2	CREATE TABLE `t2` (
+  `a` int(11) DEFAULT NULL,
+  `b` varchar(50) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci ROW_FORMAT=REDUNDANT
+SELECT * FROM t2;
+a	b
+42	hello
+DROP TABLE t1, t2;
+CREATE TABLE t1 (a int, b varchar(50)) ENGINE=InnoDB ROW_FORMAT=COMPRESSED;
+INSERT INTO t1 VALUES(42, "hello");
+FLUSH TABLES t1 FOR EXPORT;
+UNLOCK TABLES;
+ALTER TABLE t2 IMPORT TABLESPACE;
+SHOW CREATE TABLE t2;
+Table	Create Table
+t2	CREATE TABLE `t2` (
+  `a` int(11) DEFAULT NULL,
+  `b` varchar(50) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci ROW_FORMAT=COMPRESSED
+SELECT * FROM t2;
+a	b
+42	hello
+DROP TABLE t1, t2;
+CREATE TABLE t1 (a int, b varchar(50)) ENGINE=InnoDB ROW_FORMAT=DYNAMIC;
+INSERT INTO t1 VALUES(42, "hello");
+FLUSH TABLES t1 FOR EXPORT;
+UNLOCK TABLES;
+ALTER TABLE t2 IMPORT TABLESPACE;
+SHOW CREATE TABLE t2;
+Table	Create Table
+t2	CREATE TABLE `t2` (
+  `a` int(11) DEFAULT NULL,
+  `b` varchar(50) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci ROW_FORMAT=DYNAMIC
+SELECT * FROM t2;
+a	b
+42	hello
+DROP TABLE t1, t2;
+CREATE TABLE t1 (a int, b varchar(50)) ENGINE=InnoDB;
+INSERT INTO t1 VALUES(42, "hello");
+FLUSH TABLES t1 FOR EXPORT;
+UNLOCK TABLES;
+ALTER TABLE t2 IMPORT TABLESPACE;
+Warnings:
+Warning	1810	IO Read error: (2, No such file or directory) Error opening './test/t2.cfg', will attempt to import without schema verification
+Warning	1810	IO Read error: (2, No such file or directory) Error opening './test/t2.cfg', will attempt to import without schema verification
+SELECT * FROM t2;
+a	b
+42	hello
+DROP TABLE t1, t2;
+CREATE TABLE t1 (a int, b varchar(50)) ENGINE=InnoDB ROW_FORMAT=COMPACT;
+INSERT INTO t1 VALUES(42, "hello");
+FLUSH TABLES t1 FOR EXPORT;
+UNLOCK TABLES;
+ALTER TABLE t2 IMPORT TABLESPACE;
+Warnings:
+Warning	1810	IO Read error: (2, No such file or directory) Error opening './test/t2.cfg', will attempt to import without schema verification
+Warning	1810	IO Read error: (2, No such file or directory) Error opening './test/t2.cfg', will attempt to import without schema verification
+SHOW CREATE TABLE t2;
+Table	Create Table
+t2	CREATE TABLE `t2` (
+  `a` int(11) DEFAULT NULL,
+  `b` varchar(50) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci ROW_FORMAT=COMPACT
+SELECT * FROM t2;
+a	b
+42	hello
+DROP TABLE t1, t2;
+CREATE TABLE t1 (a int, b varchar(50)) ENGINE=InnoDB ROW_FORMAT=REDUNDANT;
+INSERT INTO t1 VALUES(42, "hello");
+FLUSH TABLES t1 FOR EXPORT;
+UNLOCK TABLES;
+ALTER TABLE t2 IMPORT TABLESPACE;
+Warnings:
+Warning	1810	IO Read error: (2, No such file or directory) Error opening './test/t2.cfg', will attempt to import without schema verification
+Warning	1810	IO Read error: (2, No such file or directory) Error opening './test/t2.cfg', will attempt to import without schema verification
+SHOW CREATE TABLE t2;
+Table	Create Table
+t2	CREATE TABLE `t2` (
+  `a` int(11) DEFAULT NULL,
+  `b` varchar(50) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci ROW_FORMAT=REDUNDANT
+SELECT * FROM t2;
+a	b
+42	hello
+DROP TABLE t1, t2;
+CREATE TABLE t1 (a int, b varchar(50)) ENGINE=InnoDB ROW_FORMAT=COMPRESSED;
+INSERT INTO t1 VALUES(42, "hello");
+FLUSH TABLES t1 FOR EXPORT;
+UNLOCK TABLES;
+ALTER TABLE t2 IMPORT TABLESPACE;
+Warnings:
+Warning	1810	IO Read error: (2, No such file or directory) Error opening './test/t2.cfg', will attempt to import without schema verification
+Warning	1810	IO Read error: (2, No such file or directory) Error opening './test/t2.cfg', will attempt to import without schema verification
+SHOW CREATE TABLE t2;
+Table	Create Table
+t2	CREATE TABLE `t2` (
+  `a` int(11) DEFAULT NULL,
+  `b` varchar(50) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci ROW_FORMAT=COMPRESSED
+SELECT * FROM t2;
+a	b
+42	hello
+DROP TABLE t1, t2;
+CREATE TABLE t1 (a int, b varchar(50)) ENGINE=InnoDB ROW_FORMAT=DYNAMIC;
+INSERT INTO t1 VALUES(42, "hello");
+FLUSH TABLES t1 FOR EXPORT;
+UNLOCK TABLES;
+ALTER TABLE t2 IMPORT TABLESPACE;
+Warnings:
+Warning	1810	IO Read error: (2, No such file or directory) Error opening './test/t2.cfg', will attempt to import without schema verification
+Warning	1810	IO Read error: (2, No such file or directory) Error opening './test/t2.cfg', will attempt to import without schema verification
+SHOW CREATE TABLE t2;
+Table	Create Table
+t2	CREATE TABLE `t2` (
+  `a` int(11) DEFAULT NULL,
+  `b` varchar(50) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci ROW_FORMAT=DYNAMIC
+SELECT * FROM t2;
+a	b
+42	hello
+DROP TABLE t1, t2;
+SET GLOBAL innodb_checksum_algorithm=default;

@@ -111,6 +111,8 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "fil0pagecompress.h"
 #include "ut0mem.h"
 #include "row0ext.h"
+// fixme: consider extracting functions to a header file.
+#include "../row/row0import.cc"
 
 #include "lz4.h"
 #include "lzo/lzo1x.h"
@@ -291,6 +293,23 @@ get_row_format(
 		ut_ad(0);
 		return(REC_FORMAT_DYNAMIC);
 	}
+}
+
+static enum row_type from_rec_format(const rec_format_enum from)
+{
+  switch (from)
+  {
+  case REC_FORMAT_COMPACT:
+    return ROW_TYPE_COMPACT;
+  case REC_FORMAT_DYNAMIC:
+    return ROW_TYPE_DYNAMIC;
+  case REC_FORMAT_REDUNDANT:
+    return ROW_TYPE_REDUNDANT;
+  case REC_FORMAT_COMPRESSED:
+    return ROW_TYPE_COMPRESSED;
+  default:
+    return ROW_TYPE_DEFAULT;
+  }
 }
 
 static ulong	innodb_default_row_format = DEFAULT_ROW_FORMAT_DYNAMIC;
@@ -5848,24 +5867,62 @@ ha_innobase::open(const char* name, int, uint)
 	"bare" table similar to the effects of CREATE TABLE followed by ALTER
 	TABLE ... DISCARD TABLESPACE. */
 	if (!ib_table && thd_ddl_options(thd)->import_tablespace())
-	{
-		HA_CREATE_INFO create_info;
-		create_info.init();
-		update_create_info_from_table(&create_info, table);
-		trx_t *trx= innobase_trx_allocate(thd);
-		trx_start_for_ddl(trx);
-		if (lock_sys_tables(trx) == DB_SUCCESS)
-		{
-			row_mysql_lock_data_dictionary(trx);
-			create(name, table, &create_info, true, trx);
-			trx->commit();
-			row_mysql_unlock_data_dictionary(trx);
-		} else
-			trx->rollback();
-		trx->free();
-		ib_table = open_dict_table(name, norm_name, is_part,
-															 DICT_ERR_IGNORE_TABLESPACE);
-		DEBUG_SYNC(thd, "ib_open_after_create_and_open_for_import");
+  {
+    // check .ibd file exists, otherwise break from if.
+    HA_CREATE_INFO create_info;
+    create_info.init();
+    update_create_info_from_table(&create_info, table);
+    trx_t *trx= innobase_trx_allocate(thd);
+    // fixme: do we need trx here?
+    FetchIndexRootPages fetchIndexRootPages(name, trx);
+    // fixme: consider aborting the whole import process if not DB_SUCCESS.
+    if (fil_tablespace_iterate(fil_path_to_mysql_datadir, name, IO_BUFFER_SIZE(srv_page_size), fetchIndexRootPages) != DB_SUCCESS)
+    {
+        sql_print_error("failed to get row format from ibd for %s.\n",
+                        norm_name);
+        trx->free();
+        // fixme: better error
+        DBUG_RETURN(HA_ERR_GENERIC);      
+    }
+    // get the row format from ibd
+    create_info.row_type = fetchIndexRootPages.m_row_format;
+    // if .cfg exists, get the row format from cfg, and compare with
+    // ibd, report error if different, except when cfg reports compact and 
+    enum rec_format_enum rec_format_from_cfg;
+    if (get_row_type_from_cfg(fil_path_to_mysql_datadir, name, thd, rec_format_from_cfg) == DB_SUCCESS)
+    {
+      // if ibd reports default but cfg reports compact or dynamic, go
+      // with cfg.
+      if (create_info.row_type != from_rec_format(rec_format_from_cfg) &&
+          !((rec_format_from_cfg == REC_FORMAT_COMPACT ||
+             rec_format_from_cfg == REC_FORMAT_DYNAMIC) &&
+            create_info.row_type == ROW_TYPE_DEFAULT))
+      {
+        // report error and return
+        sql_print_error("cfg and ibd disagree on row format for table %s.\n",
+                        norm_name);
+        trx->free();
+        // fixme: better error
+        DBUG_RETURN(HA_ERR_GENERIC);
+      }
+      else
+        create_info.row_type= from_rec_format(rec_format_from_cfg);
+    } else if (create_info.row_type == ROW_TYPE_DEFAULT)
+      create_info.row_type = ROW_TYPE_DYNAMIC;
+    trx_start_for_ddl(trx);
+    if (lock_sys_tables(trx) == DB_SUCCESS)
+    {
+      row_mysql_lock_data_dictionary(trx);
+      create(name, table, &create_info, true, trx);
+      trx->commit();
+      row_mysql_unlock_data_dictionary(trx);
+    }
+    else
+      trx->rollback();
+    trx->free();
+    ib_table = open_dict_table(name, norm_name, is_part,
+                               DICT_ERR_IGNORE_TABLESPACE);
+    DEBUG_SYNC(thd, "ib_open_after_create_and_open_for_import");
 	}
 
 	if (NULL == ib_table) {
