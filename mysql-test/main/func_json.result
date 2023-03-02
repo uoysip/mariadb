@@ -3488,3 +3488,15 @@ val_obj
 {"number1":4, "string1":"abcd", "object1":{"key1":"val1", "key2":[1,2,3, "string1"], "key3":4}}
 DROP TABLE str_table, num_table, true_table, false_table, null_table, arr_table, obj_table;
 # End of 10.12 test
+#
+# MDEV-30677: Incorrect result for "SELECT JSON_SCHEMA_VALID('{}', NULL)"
+#
+SELECT JSON_SCHEMA_VALID('{}', NULL);
+JSON_SCHEMA_VALID('{}', NULL)
+NULL
+SELECT JSON_SCHEMA_VALID(NULL, '{}');
+JSON_SCHEMA_VALID(NULL, '{}')
+NULL
+SELECT JSON_SCHEMA_VALID(NULL, NULL);
+JSON_SCHEMA_VALID(NULL, NULL)
+NULL

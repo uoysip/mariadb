@@ -2506,3 +2506,10 @@ SELECT * FROM obj_table;
 DROP TABLE str_table, num_table, true_table, false_table, null_table, arr_table, obj_table;
 
 --echo # End of 10.12 test
+
+--echo #
+--echo # MDEV-30677: Incorrect result for "SELECT JSON_SCHEMA_VALID('{}', NULL)"
+--echo #
+SELECT JSON_SCHEMA_VALID('{}', NULL);
+SELECT JSON_SCHEMA_VALID(NULL, '{}');
+SELECT JSON_SCHEMA_VALID(NULL, NULL);

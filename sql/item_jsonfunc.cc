@@ -4729,13 +4729,23 @@ longlong Item_func_json_schema_valid::val_int()
   int is_valid= 1;
 
   if (!schema_validated)
-    return 0;
+  {
+    String arg0_tmp;
+    String *arg0= args[0]->val_json(&arg0_tmp);
+    if (!arg0 || !arg0->length())
+    {
+      if (!arg0)
+        null_value= 1;
+    }
+    return 1;
+  }
 
   val= args[1]->val_json(&tmp_val);
 
   if (!val || !val->length())
   {
-    null_value= 0;
+    if (!val)
+      null_value= 1;
     return 1;
   }
 
@@ -4791,7 +4801,10 @@ bool Item_func_json_schema_valid::fix_length_and_dec(THD *thd)
   String *js= args[0]->val_json(&tmp_js);
 
   if ((null_value= args[0]->null_value))
+  {
+    null_value= 1;
     return 0;
+  }
   json_scan_start(&je, js->charset(), (const uchar *) js->ptr(),
                   (const uchar *) js->ptr() + js->length());
 
@@ -4801,6 +4814,8 @@ bool Item_func_json_schema_valid::fix_length_and_dec(THD *thd)
     schema_validated= true;
   else
     res= true;
+
+  set_maybe_null();
 
   if (je.s.error)
     report_json_error(js, &je, 1);
