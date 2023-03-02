@@ -495,8 +495,11 @@ bool Json_schema_multiple_of::handle_keyword(THD *thd, json_engine_t *je,
 
   double val= je->s.cs->strntod((char *) je->value,
                                  je->value_len, &end, &err);
-  if (val < 0)
+  if (val <= 0)
+  {
     my_error(ER_JSON_INVALID_VALUE_FOR_KEYWORD, MYF(0), "multipleOf");
+    return true;
+  }
   multiple_of= val;
 
   return false;
@@ -527,7 +530,10 @@ bool Json_schema_max_len::handle_keyword(THD *thd, json_engine_t *je,
   double val= je->s.cs->strntod((char *) je->value,
                                  je->value_len, &end, &err);
   if (val < 0)
+  {
    my_error(ER_JSON_INVALID_VALUE_FOR_KEYWORD, MYF(0), "maxLength");
+   return true;
+  }
   max_len= (int)val;
 
   return false;
@@ -558,7 +564,10 @@ bool Json_schema_min_len::handle_keyword(THD *thd, json_engine_t *je,
   double val= je->s.cs->strntod((char *) je->value,
                                  je->value_len, &end, &err);
   if (val < 0)
+  {
     my_error(ER_JSON_INVALID_VALUE_FOR_KEYWORD, MYF(0), "minLength");
+    return true;
+  }
   min_len= (int)val;
 
   return false;
@@ -648,7 +657,10 @@ bool Json_schema_max_items::handle_keyword(THD *thd, json_engine_t *je,
   double val= je->s.cs->strntod((char *) je->value,
                                  je->value_len, &end, &err);
   if (val < 0)
+  {
    my_error(ER_JSON_INVALID_VALUE_FOR_KEYWORD, MYF(0), "maxItems");
+   return true;
+  }
   max_items= (int)val;
 
   return false;
@@ -697,7 +709,10 @@ bool Json_schema_min_items::handle_keyword(THD *thd, json_engine_t *je,
   double val= je->s.cs->strntod((char *) je->value,
                                  je->value_len, &end, &err);
   if (val < 0)
+  {
     my_error(ER_JSON_INVALID_VALUE_FOR_KEYWORD, MYF(0), "maxLength");
+    return true;
+  }
   min_items= (int)val;
 
   return false;
@@ -886,6 +901,7 @@ bool Json_schema_items_details::handle_keyword(THD *thd, json_engine_t *je,
       if (je->value_type != JSON_VALUE_OBJECT)
       {
        my_error(ER_JSON_INVALID_VALUE_FOR_KEYWORD, MYF(0), "items");
+       return true;
       }
       begin= (char*)je->value;
 
@@ -1102,7 +1118,10 @@ bool Json_schema_max_prop::handle_keyword(THD *thd, json_engine_t *je,
   double val= je->s.cs->strntod((char *) je->value,
                                  je->value_len, &end, &err);
   if (val < 0)
+  {
     my_error(ER_JSON_INVALID_VALUE_FOR_KEYWORD, MYF(0), "maxProperties");
+    return true;
+  }
   max_prop= (int)val;
 
   return false;
@@ -1160,7 +1179,10 @@ bool Json_schema_min_prop::handle_keyword(THD *thd, json_engine_t *je,
   double val= je->s.cs->strntod((char *) je->value,
                                  je->value_len, &end, &err);
   if (val < 0)
+  {
     my_error(ER_JSON_INVALID_VALUE_FOR_KEYWORD, MYF(0), "minProperties");
+    return true;
+  }
   min_prop= (int)val;
 
   return false;
