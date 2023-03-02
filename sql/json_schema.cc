@@ -120,7 +120,7 @@ bool Json_schema_type::handle_keyword(THD *thd, json_engine_t *je,
         return true;
       json_assign_type(&type, je);
     }
-    return false;
+    return je->s.error ? true : false;
   }
   else if (je->value_type == JSON_VALUE_STRING)
   {
@@ -314,7 +314,7 @@ bool Json_schema_enum::handle_keyword(THD *thd, json_engine_t *je,
          return true;
       }
     }
-    return false;
+    return je->s.error ? true : false;
   }
   else
   {
@@ -948,7 +948,7 @@ bool Json_schema_items_details::handle_keyword(THD *thd, json_engine_t *je,
   }
   else
     return true;
-  return false;
+  return je->s.error ? true : false;
 }
 
 bool Json_schema_unique_items::validate(const json_engine_t *je)
@@ -1253,7 +1253,7 @@ bool Json_schema_required::handle_keyword(THD *thd, json_engine_t *je,
       this->required_properties.push_back(str);
     }
   }
-  return false;
+  return je->s.error ? true : false;
 }
 
 bool Json_schema_dependent_prop::validate(const json_engine_t *je)
@@ -1414,7 +1414,7 @@ bool Json_schema_dependent_prop::handle_keyword(THD *thd, json_engine_t *je,
     my_error(ER_JSON_INVALID_VALUE_FOR_KEYWORD, MYF(0), "dependentRequired");
     return true;
   }
-  return false;
+  return je->s.error ? true : false;
 }
 
 bool Json_schema_properties::validate(const json_engine_t *je)
@@ -1531,7 +1531,7 @@ bool Json_schema_properties::handle_keyword(THD *thd, json_engine_t *je,
       }
     }
   }
-  return false;
+  return je->s.error ? true : false;
 }
 
 
@@ -1817,7 +1817,7 @@ bool create_object_and_handle_keyword(THD *thd, json_engine_t *je,
       }
     }
   }
-  return false;
+  return je->s.error ? true : false;
 }
 
 uchar* get_key_name_for_property(const char *key_name, size_t *length,
