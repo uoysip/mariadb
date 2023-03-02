@@ -245,12 +245,10 @@ bool Json_schema_enum::validate(const json_engine_t *je)
 
   if (temp_je.value_type > JSON_VALUE_NUMBER)
   {
-    if (temp_je.value_type == JSON_VALUE_TRUE)
-      return !(enum_scalar & HAS_TRUE_VAL);
-    if (temp_je.value_type == JSON_VALUE_FALSE)
-      return !(enum_scalar & HAS_FALSE_VAL);
-    if (temp_je.value_type == JSON_VALUE_NULL)
-      return !(enum_scalar & HAS_NULL_VAL);
+    if (!(enum_scalar & (1 << temp_je.value_type)))
+      return true;
+    else
+      return false;
   }
   json_get_normalized_string(&temp_je, &a_res, &err);
   if (err)
@@ -271,6 +269,7 @@ bool Json_schema_enum::handle_keyword(THD *thd, json_engine_t *je,
                                       List<Json_schema_keyword>
                                            *all_keywords)
 {
+  int count= 0;
   if (my_hash_init(PSI_INSTRUMENT_ME,
                    &this->enum_values,
                    je->s.cs, 1024, 0, 0, (my_hash_get_key) get_key_name,
@@ -284,35 +283,53 @@ bool Json_schema_enum::handle_keyword(THD *thd, json_engine_t *je,
     {
       if (json_read_value(je))
         return true;
+      count++;
       if (je->value_type > JSON_VALUE_NUMBER)
       {
-        if (je->value_type == JSON_VALUE_TRUE)
-          enum_scalar|= HAS_TRUE_VAL;
-        else if (je->value_type == JSON_VALUE_FALSE)
-          enum_scalar|= HAS_FALSE_VAL;
-        else if (je->value_type == JSON_VALUE_NULL)
-          enum_scalar|= HAS_NULL_VAL;
+        if (!(enum_scalar & (1 << je->value_type)))
+          enum_scalar|= 1 << je->value_type;
+        else
+        {
+          my_error(ER_JSON_INVALID_VALUE_FOR_KEYWORD, MYF(0), "enum");
+          return true;
+        }
       }
-
-      char *norm_str;
-      int err= 1;
-      String a_res("", 0, je->s.cs);
-
-      json_get_normalized_string(je, &a_res, &err);
-      if (err)
-        return true;
-
-      norm_str= (char*)alloc_root(thd->mem_root,
-                                  a_res.length()+1);
-      if (!norm_str)
-        return true;
       else
       {
-        norm_str[a_res.length()]= '\0';
-        strncpy(norm_str, (const char*)a_res.ptr(), a_res.length());
-        if (my_hash_insert(&this->enum_values, (uchar*)norm_str))
-         return true;
+        char *norm_str;
+        int err= 1;
+        String a_res("", 0, je->s.cs);
+
+        json_get_normalized_string(je, &a_res, &err);
+        if (err)
+          return true;
+
+        norm_str= (char*)alloc_root(thd->mem_root,
+                                    a_res.length()+1);
+        if (!norm_str)
+          return true;
+        else
+        {
+          norm_str[a_res.length()]= '\0';
+          strncpy(norm_str, (const char*)a_res.ptr(), a_res.length());
+          if (!my_hash_search(&this->enum_values, (uchar*)norm_str,
+                              strlen(norm_str)))
+          {
+            if (my_hash_insert(&this->enum_values, (uchar*)norm_str))
+              return true;
+          }
+          else
+          {
+            my_error(ER_JSON_INVALID_VALUE_FOR_KEYWORD, MYF(0), "enum");
+            return true;
+          }
+        }
       }
+    }
+    if (!count)
+    {
+     my_error(ER_JSON_INVALID_VALUE_FOR_KEYWORD, MYF(0), "enum");
+     return true;
     }
     return false;
   }

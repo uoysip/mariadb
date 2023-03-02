@@ -2505,4 +2505,23 @@ SELECT * FROM obj_table;
 
 DROP TABLE str_table, num_table, true_table, false_table, null_table, arr_table, obj_table;
 
+--echo #
+--echo # MDEV-30703: JSON_SCHEMA_VALID : Enum array must have at least one value
+--echo #
+
+SET @schema = '{
+                 "type":"array",
+                  "enum": []
+                }';
+--error ER_JSON_INVALID_VALUE_FOR_KEYWORD
+SELECT JSON_SCHEMA_VALID(@schema, '2');
+
+SET @schema = '{
+                 "type":"number",
+                  "enum": [2, 2]
+                }';
+--error ER_JSON_INVALID_VALUE_FOR_KEYWORD
+SELECT JSON_SCHEMA_VALID(@schema, '2');
+
+
 --echo # End of 10.12 test

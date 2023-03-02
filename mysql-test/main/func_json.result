@@ -3487,4 +3487,19 @@ SELECT * FROM obj_table;
 val_obj
 {"number1":4, "string1":"abcd", "object1":{"key1":"val1", "key2":[1,2,3, "string1"], "key3":4}}
 DROP TABLE str_table, num_table, true_table, false_table, null_table, arr_table, obj_table;
+#
+# MDEV-30703: JSON_SCHEMA_VALID : Enum array must have at least one value
+#
+SET @schema = '{
+                 "type":"array",
+                  "enum": []
+                }';
+SELECT JSON_SCHEMA_VALID(@schema, '2');
+ERROR HY000: Invalid value for keyword enum
+SET @schema = '{
+                 "type":"number",
+                  "enum": [2, 2]
+                }';
+SELECT JSON_SCHEMA_VALID(@schema, '2');
+ERROR HY000: Invalid value for keyword enum
 # End of 10.12 test
