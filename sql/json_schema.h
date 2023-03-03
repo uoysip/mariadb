@@ -150,7 +150,7 @@ class Json_schema_minimum : public Json_schema_keyword
 class Json_schema_multiple_of : public Json_schema_keyword
 {
   private:
-    double multiple_of;
+    longlong multiple_of;
 
   public:
     bool validate(const json_engine_t *je) override;
