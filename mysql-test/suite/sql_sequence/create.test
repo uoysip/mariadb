@@ -697,3 +697,10 @@ create or replace sequence t1 start with 256 as tinyint unsigned;
 create or replace sequence t1 start with 123456789012345678901 as tinyint unsigned;
 
 drop sequence t1;
+
+# information_schema.sequences
+create sequence s1 as tinyint unsigned increment by 23;
+create sequence s2 start with 42 minvalue -9223372036854775807;
+create sequence s3 as bigint unsigned start with 12345678901234567890 cycle;
+select * from information_schema.sequences;
+drop sequence s1, s2, s3;

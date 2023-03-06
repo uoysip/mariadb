@@ -1139,3 +1139,12 @@ ERROR HY000: Sequence 'test.t1' has out of range value for options
 create or replace sequence t1 start with 123456789012345678901 as tinyint unsigned;
 ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near '123456789012345678901 as tinyint unsigned' at line 1
 drop sequence t1;
+create sequence s1 as tinyint unsigned increment by 23;
+create sequence s2 start with 42 minvalue -9223372036854775807;
+create sequence s3 as bigint unsigned start with 12345678901234567890 cycle;
+select * from information_schema.sequences;
+SEQUENCE_CATALOG	SEQUENCE_SCHEMA	SEQUENCE_NAME	DATA_TYPE	NUMERIC_PRECISION	NUMERIC_PRECISION_RADIX	NUMERIC_SCALE	START_VALUE	MINIMUM_VALUE	MAXIMUM_VALUE	INCREMENT	CYCLE_OPTION	DECLARED_DATA_TYPE	DECLARED_NUMERIC_PRECISION	DECLARED_NUMERIC_SCALE
+def	test	s3	bigint unsigned	64	2	0	12345678901234567890	1	18446744073709551614	1	1	NULL	NULL	NULL
+def	test	s2	bigint	64	2	0	42	-9223372036854775807	9223372036854775806	1	0	NULL	NULL	NULL
+def	test	s1	tiny unsigned	8	2	0	1	1	254	23	0	NULL	NULL	NULL
+drop sequence s1, s2, s3;
