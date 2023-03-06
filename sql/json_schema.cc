@@ -496,7 +496,10 @@ bool Json_schema_multiple_of::handle_keyword(THD *thd, json_engine_t *je,
   double val= je->s.cs->strntod((char *) je->value,
                                  je->value_len, &end, &err);
   if (val < 0)
+  {
     my_error(ER_JSON_INVALID_VALUE_FOR_KEYWORD, MYF(0), "multipleOf");
+    return true;
+  }
   multiple_of= val;
 
   return false;
@@ -527,7 +530,10 @@ bool Json_schema_max_len::handle_keyword(THD *thd, json_engine_t *je,
   double val= je->s.cs->strntod((char *) je->value,
                                  je->value_len, &end, &err);
   if (val < 0)
-   my_error(ER_JSON_INVALID_VALUE_FOR_KEYWORD, MYF(0), "maxLength");
+  {
+    my_error(ER_JSON_INVALID_VALUE_FOR_KEYWORD, MYF(0), "maxLength");
+    return true;
+  }
   max_len= (int)val;
 
   return false;
@@ -558,7 +564,10 @@ bool Json_schema_min_len::handle_keyword(THD *thd, json_engine_t *je,
   double val= je->s.cs->strntod((char *) je->value,
                                  je->value_len, &end, &err);
   if (val < 0)
+  {
     my_error(ER_JSON_INVALID_VALUE_FOR_KEYWORD, MYF(0), "minLength");
+    return true;
+  }
   min_len= (int)val;
 
   return false;
@@ -648,7 +657,10 @@ bool Json_schema_max_items::handle_keyword(THD *thd, json_engine_t *je,
   double val= je->s.cs->strntod((char *) je->value,
                                  je->value_len, &end, &err);
   if (val < 0)
-   my_error(ER_JSON_INVALID_VALUE_FOR_KEYWORD, MYF(0), "maxItems");
+  {
+    my_error(ER_JSON_INVALID_VALUE_FOR_KEYWORD, MYF(0), "maxItems");
+    return true;
+  }
   max_items= (int)val;
 
   return false;
@@ -791,6 +803,11 @@ bool Json_schema_contains::handle_keyword(THD *thd, json_engine_t *je,
 
     double val= je->s.cs->strntod((char *) je->value,
                                    je->value_len, &end, &err);
+    if (val < 0)
+    {
+      my_error(ER_JSON_INVALID_VALUE_FOR_KEYWORD, MYF(0), "maxContains");
+      return true;
+    }
     max_contains= (int)val;
     contains_flag|= HAS_MAX_CONTAINS;
   }
@@ -808,6 +825,11 @@ bool Json_schema_contains::handle_keyword(THD *thd, json_engine_t *je,
 
     double val= je->s.cs->strntod((char *) je->value,
                                    je->value_len, &end, &err);
+    if (val < 0)
+    {
+      my_error(ER_JSON_INVALID_VALUE_FOR_KEYWORD, MYF(0), "minContains");
+      return true;
+    }
     min_contains= (int)val;
     contains_flag|= HAS_MIN_CONTAINS;
   }
@@ -956,7 +978,7 @@ bool Json_schema_unique_items::validate(const json_engine_t *je)
   HASH unique_items;
   List <char> norm_str_list;
   json_engine_t curr_je= *je;
-  int res= true, level= curr_je.stack_p;
+  int res= true, level= curr_je.stack_p, scalar_val= 0;
 
   if (curr_je.value_type != JSON_VALUE_ARRAY)
     return false;
@@ -967,46 +989,35 @@ bool Json_schema_unique_items::validate(const json_engine_t *je)
 
   while(json_scan_next(&curr_je)==0 && level <= curr_je.stack_p)
   {
-    int has_none= 0, has_true= 2, has_false= 4, has_null= 8, err= 1;
+    int err= 1;
     char *norm_str;
     String a_res("", 0, curr_je.s.cs);
 
     if (json_read_value(&curr_je))
       goto end;
 
-    json_get_normalized_string(&curr_je, &a_res, &err);
-
-    if (err)
-      goto end;
-
-    norm_str= (char*)malloc(a_res.length()+1);
-    if (!norm_str)
-      goto end;
-
-    norm_str[a_res.length()]= '\0';
-    strncpy(norm_str, (const char*)a_res.ptr(), a_res.length());
-    norm_str_list.push_back(norm_str);
-
-    if (curr_je.value_type == JSON_VALUE_TRUE)
+    if (curr_je.value_type > JSON_VALUE_NUMBER)
     {
-      if (has_none & has_true)
+      if (!(scalar_val & 1 << curr_je.value_type))
+        scalar_val|= 1 << curr_je.value_type;
+      else
         goto end;
-      has_none= has_none | has_true;
-    }
-    else if (curr_je.value_type == JSON_VALUE_FALSE)
-    {
-      if (has_none & has_false)
-        goto end;
-      has_none= has_none | has_false;
-    }
-    else if (curr_je.value_type == JSON_VALUE_NULL)
-    {
-      if (has_none & has_null)
-        goto end;
-      has_none= has_none | has_null;
     }
     else
     {
+      json_get_normalized_string(&curr_je, &a_res, &err);
+
+      if (err)
+        goto end;
+
+      norm_str= (char*)malloc(a_res.length()+1);
+      if (!norm_str)
+        goto end;
+
+      norm_str[a_res.length()]= '\0';
+      strncpy(norm_str, (const char*)a_res.ptr(), a_res.length());
+      norm_str_list.push_back(norm_str);
+
       if (!my_hash_search(&unique_items, (uchar*)norm_str,
                           strlen(((const char*)norm_str))))
       {
@@ -1018,7 +1029,9 @@ bool Json_schema_unique_items::validate(const json_engine_t *je)
     }
     a_res.set("", 0, curr_je.s.cs);
   }
+
   res= false;
+
   end:
   if (!norm_str_list.is_empty())
   {
@@ -1102,7 +1115,10 @@ bool Json_schema_max_prop::handle_keyword(THD *thd, json_engine_t *je,
   double val= je->s.cs->strntod((char *) je->value,
                                  je->value_len, &end, &err);
   if (val < 0)
+  {
     my_error(ER_JSON_INVALID_VALUE_FOR_KEYWORD, MYF(0), "maxProperties");
+    return true;
+  }
   max_prop= (int)val;
 
   return false;
@@ -1160,7 +1176,10 @@ bool Json_schema_min_prop::handle_keyword(THD *thd, json_engine_t *je,
   double val= je->s.cs->strntod((char *) je->value,
                                  je->value_len, &end, &err);
   if (val < 0)
+  {
     my_error(ER_JSON_INVALID_VALUE_FOR_KEYWORD, MYF(0), "minProperties");
+    return true;
+  }
   min_prop= (int)val;
 
   return false;
@@ -1246,6 +1265,11 @@ bool Json_schema_required::handle_keyword(THD *thd, json_engine_t *je,
   {
     if (json_read_value(je))
       return true;
+    if (je->value_type != JSON_VALUE_STRING)
+    {
+      my_error(ER_JSON_INVALID_VALUE_FOR_KEYWORD, MYF(0), "required");
+      return true;
+    }
     else
     {
       String *str= new (thd->mem_root)String((char*)je->value,
