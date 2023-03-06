@@ -7748,13 +7748,6 @@ SEL_TREE *Item_func_ne::get_func_mm_tree(RANGE_OPT_PARAM *param,
                                          Field *field, Item *value)
 {
   DBUG_ENTER("Item_func_ne::get_func_mm_tree");
-  /*
-    If this condition is a "col1<>...", where there is a UNIQUE KEY(col1),
-    do not construct a SEL_TREE from it. A condition that excludes just one
-    row in the table is not selective (unless there are only a few rows)
-  */
-  if (is_field_an_unique_index(param, field))
-    DBUG_RETURN(NULL);
   DBUG_RETURN(get_ne_mm_tree(param, field, value, value));
 }
 
