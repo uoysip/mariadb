@@ -202,6 +202,8 @@ public:
 		TABLE*			form,
 		HA_CREATE_INFO*		create_info) override;
 
+	int create_stub_for_import(const char* name);
+
 	int truncate() override;
 
 	int delete_table(const char *name) override;

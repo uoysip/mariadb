@@ -55,11 +55,6 @@ Created 2012-02-08 by Sunny Bains.
 
 using st_::span;
 
-/** The size of the buffer to use for IO.
-@param n physical page size
-@return number of pages */
-#define IO_BUFFER_SIZE(n)	((1024 * 1024) / (n))
-
 /** For gathering stats on records during phase I */
 struct row_stats_t {
 	ulint		m_n_deleted;		/*!< Number of deleted records
@@ -396,194 +391,6 @@ private:
 	ulint			m_n_rows;	/*!< Records in index */
 };
 
-/** Functor that is called for each physical page that is read from the
-tablespace file.  */
-class AbstractCallback
-{
-public:
-	/** Constructor
-	@param trx covering transaction */
-	AbstractCallback(trx_t* trx, uint32_t space_id)
-		:
-		m_zip_size(0),
-		m_trx(trx),
-		m_space(space_id),
-		m_xdes(),
-		m_xdes_page_no(UINT32_MAX),
-		m_space_flags(UINT32_MAX) UNIV_NOTHROW { }
-
-	/** Free any extent descriptor instance */
-	virtual ~AbstractCallback()
-	{
-		UT_DELETE_ARRAY(m_xdes);
-	}
-
-	/** Determine the page size to use for traversing the tablespace
-	@param file_size size of the tablespace file in bytes
-	@param block contents of the first page in the tablespace file.
-	@retval DB_SUCCESS or error code. */
-	virtual dberr_t init(
-		os_offset_t		file_size,
-		const buf_block_t*	block) UNIV_NOTHROW;
-
-	/** @return true if compressed table. */
-	bool is_compressed_table() const UNIV_NOTHROW
-	{
-		return get_zip_size();
-	}
-
-	/** @return the tablespace flags */
-	uint32_t get_space_flags() const { return m_space_flags; }
-
-	/**
-	Set the name of the physical file and the file handle that is used
-	to open it for the file that is being iterated over.
-	@param filename the physical name of the tablespace file
-	@param file OS file handle */
-	void set_file(const char* filename, pfs_os_file_t file) UNIV_NOTHROW
-	{
-		m_file = file;
-		m_filepath = filename;
-	}
-
-	ulint get_zip_size() const { return m_zip_size; }
-	ulint physical_size() const
-	{
-		return m_zip_size ? m_zip_size : srv_page_size;
-	}
-
-	const char* filename() const { return m_filepath; }
-
-	/**
-	Called for every page in the tablespace. If the page was not
-	updated then its state must be set to BUF_PAGE_NOT_USED. For
-	compressed tables the page descriptor memory will be at offset:
-		block->page.frame + srv_page_size;
-	@param block block read from file, note it is not from the buffer pool
-	@retval DB_SUCCESS or error code. */
-	virtual dberr_t operator()(buf_block_t* block) UNIV_NOTHROW = 0;
-
-	/** @return the tablespace identifier */
-	uint32_t get_space_id() const { return m_space; }
-
-	bool is_interrupted() const { return trx_is_interrupted(m_trx); }
-
-	/**
-	Get the data page depending on the table type, compressed or not.
-	@param block - block read from disk
-	@retval the buffer frame */
-	static byte* get_frame(const buf_block_t* block)
-	{
-		return block->page.zip.data
-			? block->page.zip.data : block->page.frame;
-	}
-
-	/** Invoke the functionality for the callback */
-	virtual dberr_t run(const fil_iterator_t& iter,
-			    buf_block_t* block) UNIV_NOTHROW = 0;
-
-protected:
-	/** Get the physical offset of the extent descriptor within the page.
-	@param page_no page number of the extent descriptor
-	@param page contents of the page containing the extent descriptor.
-	@return the start of the xdes array in a page */
-	const xdes_t* xdes(
-		ulint		page_no,
-		const page_t*	page) const UNIV_NOTHROW
-	{
-		ulint	offset;
-
-		offset = xdes_calc_descriptor_index(get_zip_size(), page_no);
-
-		return(page + XDES_ARR_OFFSET + XDES_SIZE * offset);
-	}
-
-	/** Set the current page directory (xdes). If the extent descriptor is
-	marked as free then free the current extent descriptor and set it to
-	0. This implies that all pages that are covered by this extent
-	descriptor are also freed.
-
-	@param page_no offset of page within the file
-	@param page page contents
-	@return DB_SUCCESS or error code. */
-	dberr_t	set_current_xdes(
-		uint32_t	page_no,
-		const page_t*	page) UNIV_NOTHROW
-	{
-		m_xdes_page_no = page_no;
-
-		UT_DELETE_ARRAY(m_xdes);
-		m_xdes = NULL;
-
-		if (mach_read_from_4(XDES_ARR_OFFSET + XDES_STATE + page)
-		    != XDES_FREE) {
-			const ulint physical_size = m_zip_size
-				? m_zip_size : srv_page_size;
-
-			m_xdes = UT_NEW_ARRAY_NOKEY(xdes_t, physical_size);
-
-			/* Trigger OOM */
-			DBUG_EXECUTE_IF(
-				"ib_import_OOM_13",
-				UT_DELETE_ARRAY(m_xdes);
-				m_xdes = NULL;
-			);
-
-			if (m_xdes == NULL) {
-				return(DB_OUT_OF_MEMORY);
-			}
-
-			memcpy(m_xdes, page, physical_size);
-		}
-
-		return(DB_SUCCESS);
-	}
-
-	/** Check if the page is marked as free in the extent descriptor.
-	@param page_no page number to check in the extent descriptor.
-	@return true if the page is marked as free */
-	bool is_free(uint32_t page_no) const UNIV_NOTHROW
-	{
-		ut_a(xdes_calc_descriptor_page(get_zip_size(), page_no)
-		     == m_xdes_page_no);
-
-		if (m_xdes != 0) {
-			const xdes_t*	xdesc = xdes(page_no, m_xdes);
-			ulint		pos = page_no % FSP_EXTENT_SIZE;
-
-			return xdes_is_free(xdesc, pos);
-		}
-
-		/* If the current xdes was free, the page must be free. */
-		return(true);
-	}
-
-protected:
-	/** The ROW_FORMAT=COMPRESSED page size, or 0. */
-	ulint			m_zip_size;
-
-	/** File handle to the tablespace */
-	pfs_os_file_t		m_file;
-
-	/** Physical file path. */
-	const char*		m_filepath;
-
-	/** Covering transaction. */
-	trx_t*			m_trx;
-
-	/** Space id of the file being iterated over. */
-	uint32_t		m_space;
-
-	/** Current extent descriptor page */
-	xdes_t*			m_xdes;
-
-	/** Physical page offset in the file of the extent descriptor */
-	uint32_t		m_xdes_page_no;
-
-	/** Flags value read from the header page */
-	uint32_t		m_space_flags;
-};
-
 ATTRIBUTE_COLD static dberr_t invalid_space_flags(uint32_t flags)
 {
   if (fsp_flags_is_incompatible_mysql(flags))
@@ -665,97 +472,17 @@ static dberr_t fil_iterate(
 	buf_block_t*		block,
 	AbstractCallback&	callback);
 
-/**
-Try and determine the index root pages by checking if the next/prev
-pointers are both FIL_NULL. We need to ensure that skip deleted pages. */
-struct FetchIndexRootPages : public AbstractCallback {
-
-	/** Index information gathered from the .ibd file. */
-	struct Index {
-
-		Index(index_id_t id, uint32_t page_no)
-			:
-			m_id(id),
-			m_page_no(page_no) { }
-
-		index_id_t	m_id;		/*!< Index id */
-		uint32_t	m_page_no;	/*!< Root page number */
-	};
-
-	/** Constructor
-	@param trx covering (user) transaction
-	@param table table definition in server .*/
-	FetchIndexRootPages(const dict_table_t* table, trx_t* trx)
-		:
-		AbstractCallback(trx, UINT32_MAX),
-		m_table(table), m_index(0, 0) UNIV_NOTHROW { }
-
-  // TODO: Do we need trx?
-	FetchIndexRootPages(const char* table_name, trx_t* trx)
-		:
-		AbstractCallback(trx, UINT32_MAX),
-		m_table(nullptr), m_table_name(table_name), m_index(0, 0) UNIV_NOTHROW { }
-  
-	/** Destructor */
-	~FetchIndexRootPages() UNIV_NOTHROW override = default;
-
-	/** Fetch the clustered index root page in the tablespace
-	@param iter	Tablespace iterator
-	@param block	Block to use for IO
-	@retval DB_SUCCESS or error code */
-	dberr_t run(const fil_iterator_t& iter,
-		    buf_block_t* block) UNIV_NOTHROW override;
-
-	/** Called for each block as it is read from the file.
-	@param block block to convert, it is not from the buffer pool.
-	@retval DB_SUCCESS or error code. */
-	dberr_t operator()(buf_block_t* block) UNIV_NOTHROW override;
-
-  /** Get row format from the header and the root index page. */
-  enum row_type get_row_format(buf_block_t *block)
-  {
-    if (!page_is_comp(block->page.frame))
-      return ROW_TYPE_REDUNDANT;
-    // With full_crc32 we cannot tell between dynamic or compact, and
-    // return default. We cannot simply return dynamic, as the client
-    // of this function will not be able to tell whether it is dynamic
-    // because of this or the other branch below.
-    if (fil_space_t::full_crc32(m_space_flags))
-      return ROW_TYPE_DEFAULT;
-    if (m_space_flags & FSP_FLAGS_MASK_ATOMIC_BLOBS)
-    {
-      if (FSP_FLAGS_GET_ZIP_SSIZE(m_space_flags))
-        return ROW_TYPE_COMPRESSED;
-      else
-        return ROW_TYPE_DYNAMIC;
-    }
-    return ROW_TYPE_COMPACT;
-  }
-
-  /** Update the import configuration that will be used to import
-	the tablespace. */
-	dberr_t build_row_import(row_import* cfg) const UNIV_NOTHROW;
-
-	/** Table definition in server. */
-	const dict_table_t*	m_table;
-
-  const char* m_table_name;
-
-	/** Index information */
-	Index			m_index;
-
-  enum row_type m_row_format;
-};
-
-/** Called for each block as it is read from the file. Check index pages to
-determine the exact row format. We can't get that from the tablespace
-header flags alone.
+/** Check the fsp flags from the table and header file match. Also
+check against row format mismatch between the table and the index root
+page, as we can't get that from the tablespace header flags alone.
 
 @param block block to convert, it is not from the buffer pool.
 @retval DB_SUCCESS or error code. */
 dberr_t
 FetchIndexRootPages::operator()(buf_block_t *block) UNIV_NOTHROW
 {
+  ut_ad(!creating_table);
+
 	if (is_interrupted()) return DB_INTERRUPTED;
 
 	const page_t*	page = get_frame(block);
@@ -3769,11 +3496,10 @@ page_corrupted:
            && buf_page_is_corrupted(false, readptr, m_space_flags))
     goto page_corrupted;
 
-  // m_table == nullptr implies we are in the first ddl
-  if (m_table)
-    err= this->operator()(block);
-  else
+  if (creating_table)
     m_row_format = get_row_format(block);
+  else
+    err= this->operator()(block);
 func_exit:
   free(page_compress_buf);
   return err;
@@ -4096,12 +3822,12 @@ func_exit:
 }
 
 /********************************************************************//**
-Iterate over all the pages in the tablespace.
-@param table - the table definiton in the server
+Iterate over all or some pages in the tablespace.
+@param dir_path - the path to data dir storing the tablespace
+@param name - the table name
 @param n_io_buffers - number of blocks to read and write together
-@param callback - functor that will do the page updates
+@param callback - functor that will do the page queries or updates
 @return	DB_SUCCESS or error code */
-static
 dberr_t
 fil_tablespace_iterate(
 /*===================*/
@@ -4247,6 +3973,12 @@ fil_tablespace_iterate(
 	return(err);
 }
 
+/********************************************************************//**
+Iterate over all or some pages in the tablespace.
+@param table - the table definiton in the server
+@param n_io_buffers - number of blocks to read and write together
+@param callback - functor that will do the page queries or updates
+@return	DB_SUCCESS or error code */
 static
 dberr_t
 fil_tablespace_iterate(

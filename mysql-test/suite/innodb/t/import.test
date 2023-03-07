@@ -1,12 +1,14 @@
 --source include/have_innodb.inc
+--source ../../encryption/include/have_file_key_management_plugin.inc
+
 let $MYSQLD_DATADIR = `SELECT @@datadir`;
 
 --echo #
 --echo # MDEV-26137 ALTER TABLE IMPORT enhancement
 --echo #
 
-# enhanced workflow
-CREATE TABLE t1 (a int) ENGINE=InnoDB ROW_FORMAT=DYNAMIC;
+--echo # enhanced workflow
+CREATE TABLE t1 (a int) ENGINE=InnoDB;
 INSERT INTO t1 VALUES(42);
 FLUSH TABLES t1 FOR EXPORT;
 --copy_file $MYSQLD_DATADIR/test/t1.cfg $MYSQLD_DATADIR/test/t2.cfg
@@ -17,7 +19,7 @@ ALTER TABLE t2 IMPORT TABLESPACE;
 SELECT * FROM t2;
 DROP TABLE t1, t2;
 
-# a variant of the previous case, but we drop t1 before importing t2
+--echo # a variant of the previous case, but we drop t1 before importing t2
 CREATE TABLE t1 (a int) ENGINE=InnoDB;
 INSERT INTO t1 VALUES(42);
 FLUSH TABLES t1 FOR EXPORT;
@@ -30,7 +32,7 @@ ALTER TABLE t2 IMPORT TABLESPACE;
 SELECT * FROM t2;
 DROP TABLE t2;
 
-# created t2 but did not discard tablespace
+--echo # created t2 but did not discard tablespace
 CREATE TABLE t1 (a int) ENGINE=InnoDB;
 INSERT INTO t1 VALUES(42);
 CREATE TABLE t2 LIKE t1;
@@ -48,11 +50,11 @@ ALTER TABLE t2 IMPORT TABLESPACE;
 SELECT * FROM t2;
 DROP TABLE t2;
 
-# attempt to import when there's no tablespace
+--echo # attempt to import when there's no tablespace
 --error ER_NO_SUCH_TABLE
 ALTER TABLE t2 IMPORT TABLESPACE;
 
-# with index
+--echo # with index
 CREATE TABLE t1 (a int, b varchar(50)) ENGINE=InnoDB;
 CREATE UNIQUE INDEX ai ON t1 (a);
 INSERT INTO t1 VALUES(42, "hello");
@@ -67,7 +69,7 @@ SHOW INDEX FROM t1;
 SHOW INDEX FROM t2;
 DROP TABLE t1, t2;
 
-#with virtual column index
+--echo # with virtual column index
 CREATE TABLE t1 (a int, b int as (a * a)) ENGINE=InnoDB;
 CREATE UNIQUE INDEX ai ON t1 (b);
 INSERT INTO t1 VALUES(42, default);
@@ -82,8 +84,60 @@ SHOW INDEX FROM t1;
 SHOW INDEX FROM t2;
 DROP TABLE t1, t2;
 
-# various row formats
-## with .cfg, full_crc32
+
+--echo # with encryption and page_compressed, with or without .cfg
+CREATE TABLE t1 (a int, b varchar(50)) ENGINE=InnoDB ENCRYPTED=YES ENCRYPTION_KEY_ID=6 PAGE_COMPRESSED=1;
+INSERT INTO t1 VALUES(42, "hello");
+FLUSH TABLES t1 FOR EXPORT;
+--copy_file $MYSQLD_DATADIR/test/t1.cfg $MYSQLD_DATADIR/test/t2.cfg
+--copy_file $MYSQLD_DATADIR/test/t1.frm $MYSQLD_DATADIR/test/t2.frm
+--copy_file $MYSQLD_DATADIR/test/t1.ibd $MYSQLD_DATADIR/test/t2.ibd
+UNLOCK TABLES;
+ALTER TABLE t2 IMPORT TABLESPACE;
+SHOW CREATE TABLE t2;
+SELECT * FROM t2;
+DROP TABLE t1, t2;
+
+CREATE TABLE t1 (a int, b varchar(50)) ENGINE=InnoDB ENCRYPTED=YES ENCRYPTION_KEY_ID=6 PAGE_COMPRESSED=1;
+INSERT INTO t1 VALUES(42, "hello");
+FLUSH TABLES t1 FOR EXPORT;
+--copy_file $MYSQLD_DATADIR/test/t1.frm $MYSQLD_DATADIR/test/t2.frm
+--copy_file $MYSQLD_DATADIR/test/t1.ibd $MYSQLD_DATADIR/test/t2.ibd
+UNLOCK TABLES;
+ALTER TABLE t2 IMPORT TABLESPACE;
+SHOW CREATE TABLE t2;
+SELECT * FROM t2;
+DROP TABLE t1, t2;
+
+--echo # default row formats, with or without .cfg
+SET GLOBAL innodb_default_row_format='redundant';
+CREATE TABLE t1 (a int, b varchar(50)) ENGINE=InnoDB ROW_FORMAT=COMPACT;
+INSERT INTO t1 VALUES(42, "hello");
+FLUSH TABLES t1 FOR EXPORT;
+--copy_file $MYSQLD_DATADIR/test/t1.cfg $MYSQLD_DATADIR/test/t2.cfg
+--copy_file $MYSQLD_DATADIR/test/t1.frm $MYSQLD_DATADIR/test/t2.frm
+--copy_file $MYSQLD_DATADIR/test/t1.ibd $MYSQLD_DATADIR/test/t2.ibd
+UNLOCK TABLES;
+ALTER TABLE t2 IMPORT TABLESPACE;
+SHOW CREATE TABLE t2;
+SELECT * FROM t2;
+DROP TABLE t1, t2;
+
+CREATE TABLE t1 (a int, b varchar(50)) ENGINE=InnoDB ROW_FORMAT=COMPACT;
+INSERT INTO t1 VALUES(42, "hello");
+FLUSH TABLES t1 FOR EXPORT;
+--copy_file $MYSQLD_DATADIR/test/t1.frm $MYSQLD_DATADIR/test/t2.frm
+--copy_file $MYSQLD_DATADIR/test/t1.ibd $MYSQLD_DATADIR/test/t2.ibd
+UNLOCK TABLES;
+ALTER TABLE t2 IMPORT TABLESPACE;
+SHOW CREATE TABLE t2;
+SELECT * FROM t2;
+DROP TABLE t1, t2;
+
+SET GLOBAL innodb_default_row_format=default;
+
+--echo # various row formats
+--echo ## with .cfg, full_crc32
 CREATE TABLE t1 (a int, b varchar(50)) ENGINE=InnoDB ROW_FORMAT=COMPACT;
 INSERT INTO t1 VALUES(42, "hello");
 FLUSH TABLES t1 FOR EXPORT;
@@ -132,7 +186,7 @@ SHOW CREATE TABLE t2;
 SELECT * FROM t2;
 DROP TABLE t1, t2;
 
-## without .cfg, full_crc32
+--echo ## without .cfg, full_crc32
 CREATE TABLE t1 (a int, b varchar(50)) ENGINE=InnoDB;
 INSERT INTO t1 VALUES(42, "hello");
 FLUSH TABLES t1 FOR EXPORT;
@@ -187,7 +241,7 @@ SHOW CREATE TABLE t2;
 SELECT * FROM t2;
 DROP TABLE t1, t2;
 
-## with .cfg, non-full_crc32
+--echo ## with .cfg, non-full_crc32
 SET GLOBAL innodb_checksum_algorithm=crc32;
 
 CREATE TABLE t1 (a int, b varchar(50)) ENGINE=InnoDB;
@@ -249,7 +303,7 @@ SHOW CREATE TABLE t2;
 SELECT * FROM t2;
 DROP TABLE t1, t2;
 
-# without .cfg, non-full_crc32
+--echo ## without .cfg, non-full_crc32
 CREATE TABLE t1 (a int, b varchar(50)) ENGINE=InnoDB;
 INSERT INTO t1 VALUES(42, "hello");
 FLUSH TABLES t1 FOR EXPORT;
