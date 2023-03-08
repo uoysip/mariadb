@@ -3193,6 +3193,9 @@ public:
     Set by a storage engine to request the entire
     transaction (that possibly spans multiple engines) to
     rollback. Reset in ha_rollback.
+
+    This can also be set in parallel replication if a multi-row
+    event is aborted mid-execution, and needs to be rolled back.
   */
   bool       transaction_rollback_request;
   /**

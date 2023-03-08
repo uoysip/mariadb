@@ -350,6 +350,7 @@ struct rpl_parallel_entry {
                                       PSI_stage_info *old_stage, bool reuse);
   int queue_master_restart(rpl_group_info *rgi,
                            Format_description_log_event *fdev);
+  bool trx_is_next_to_commit(rpl_group_info *rgi);
 };
 struct rpl_parallel {
   HASH domain_hash;

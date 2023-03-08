@@ -1339,6 +1339,19 @@ static bool io_slave_killed(Master_info* mi)
   DBUG_RETURN(mi->abort_slave || mi->io_thd->killed);
 }
 
+int slave_output_incomplete_trx_non_trans_err(THD *thd, rpl_group_info *rgi)
+{
+  int errcode= ER_SLAVE_FATAL_ERROR;
+  rgi->rli->report(
+      ERROR_LEVEL, errcode, rgi->gtid_info(), ER_THD(thd, errcode),
+      "... Slave SQL Thread stopped with incomplete event group having "
+      "non-transactional changes. If the group consists solely of row-based "
+      "events, you can try to restart the slave with "
+      "--slave-exec-mode=IDEMPOTENT, which ignores duplicate key, key not "
+      "found, and similar errors (see documentation for details).");
+  return errcode;
+}
+
 /**
    The function analyzes a possible killed status and makes
    a decision whether to accept it or not.
@@ -1383,14 +1396,6 @@ static bool sql_slave_killed(rpl_group_info *rgi)
          (thd->variables.option_bits & OPTION_KEEP_LOG)) &&
         rli->is_in_group())
     {
-      char msg_stopped[]=
-        "... Slave SQL Thread stopped with incomplete event group "
-        "having non-transactional changes. "
-        "If the group consists solely of row-based events, you can try "
-        "to restart the slave with --slave-exec-mode=IDEMPOTENT, which "
-        "ignores duplicate key, key not found, and similar errors (see "
-        "documentation for details).";
-
       DBUG_PRINT("info", ("modified_non_trans_table: %d  OPTION_BEGIN: %d  "
                           "OPTION_KEEP_LOG: %d  is_in_group: %d",
                           thd->transaction.all.modified_non_trans_table,
@@ -1434,16 +1439,13 @@ static bool sql_slave_killed(rpl_group_info *rgi)
         }
         else
         {
-          rli->report(ERROR_LEVEL, ER_SLAVE_FATAL_ERROR, rgi->gtid_info(),
-                      ER_THD(thd, ER_SLAVE_FATAL_ERROR), msg_stopped);
+          slave_output_incomplete_trx_non_trans_err(thd, rgi);
         }
       }
       else
       {
         ret= TRUE;
-        rli->report(ERROR_LEVEL, ER_SLAVE_FATAL_ERROR, rgi->gtid_info(),
-                    ER_THD(thd, ER_SLAVE_FATAL_ERROR),
-                    msg_stopped);
+        slave_output_incomplete_trx_non_trans_err(thd, rgi);
       }
     }
     else

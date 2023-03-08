@@ -11672,6 +11672,20 @@ int Rows_log_event::do_apply_event(rpl_group_info *rgi)
       if (!table->in_use)
         table->in_use= thd;
 
+      if (rgi->rli->mi->using_parallel() &&
+          ((rgi->rli->abort_slave || rgi->parallel_entry->force_abort) &&
+           !rli->stop_for_until) &&
+          (!thd->transaction.all.modified_non_trans_table ||
+           (rgi->parallel_entry->trx_is_next_to_commit(rgi))))
+      {
+        /*
+          Exit early, and let the Event-level exit logic take care of the
+          cleanup and rollback.
+        */
+        thd->transaction_rollback_request= TRUE;
+        break;
+      }
+
       error= do_exec_row(rgi);
 
       if (unlikely(error))
@@ -11726,6 +11740,9 @@ int Rows_log_event::do_apply_event(rpl_group_info *rgi)
       if (likely(error == 0) && !transactional_table)
         thd->transaction.all.modified_non_trans_table=
           thd->transaction.stmt.modified_non_trans_table= TRUE;
+
+      DBUG_EXECUTE_IF("stop_slave_between_rows",
+                    const_cast<Relay_log_info *>(rli)->abort_slave= 1;);
     } // row processing loop
     while (error == 0 && (m_curr_row != m_rows_end));
 
@@ -11785,7 +11802,7 @@ int Rows_log_event::do_apply_event(rpl_group_info *rgi)
     query_cache.invalidate_locked_for_write(thd, rgi->tables_to_lock);
 #endif /* WITH_WSREP && HAVE_QUERY_CACHE */
 
-  if (get_flags(STMT_END_F))
+  if (get_flags(STMT_END_F) && !thd->transaction_rollback_request)
   {
     if (unlikely(error= rows_event_stmt_cleanup(rgi, thd)))
       slave_rows_error_report(ERROR_LEVEL,

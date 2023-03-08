@@ -26,7 +26,7 @@
 struct rpl_parallel_thread_pool global_rpl_thread_pool;
 
 static void signal_error_to_sql_driver_thread(THD *thd, rpl_group_info *rgi,
-                                              int err);
+                                              int err, bool cleanup= true);
 
 static int
 rpt_handle_event(rpl_parallel_thread::queued_event *qev,
@@ -275,17 +275,22 @@ finish_event_group(rpl_parallel_thread *rpt, uint64 sub_id,
   wfc->wakeup_subsequent_commits(rgi->worker_error);
 }
 
-
-static void
-signal_error_to_sql_driver_thread(THD *thd, rpl_group_info *rgi, int err)
+static void signal_error_to_sql_driver_thread(THD *thd, rpl_group_info *rgi,
+                                              int err, bool cleanup)
 {
   rgi->worker_error= err;
+  rgi->unmark_start_commit();
+
+  if (thd->transaction.all.modified_non_trans_table)
+    slave_output_incomplete_trx_non_trans_err(thd, rgi);
+
+  if (cleanup)
+    rgi->cleanup_context(thd, true);
+
   /*
     In case we get an error during commit, inform following transactions that
     we aborted our commit.
   */
-  rgi->unmark_start_commit();
-  rgi->cleanup_context(thd, true);
   rgi->rli->abort_slave= true;
   rgi->rli->stop_for_until= false;
   mysql_mutex_lock(rgi->rli->relay_log.get_log_lock());
@@ -1362,6 +1367,29 @@ handle_rpl_parallel_thread(void *arg)
             thd->send_kill_message();
             err= 1;
           }
+          else if (
+              /* Check if the slave should stop */
+              (unlikely(rgi->parallel_entry->force_abort ||
+                        rgi->rli->abort_slave) &&
+               !rgi->rli->stop_for_until) &&
+              /*
+                Final event in a group should not be aborted, unless indicated
+                that rollback is required.
+              */
+              (!is_group_ending(qev->ev, event_type) ||
+               rgi->thd->transaction_rollback_request) &&
+              /*
+                If the transaction has modified a non-transactional table and
+                it is next to commit, it should try to complete.
+              */
+              (!rgi->thd->transaction.all.modified_non_trans_table ||
+                rgi->parallel_entry->trx_is_next_to_commit(rgi)))
+          {
+            /*
+              Go through with abort
+            */
+            signal_error_to_sql_driver_thread(thd, rgi, err);
+          }
           else
             err= rpt_handle_event(qev, rpt);
         }
@@ -1432,7 +1460,8 @@ handle_rpl_parallel_thread(void *arg)
 
     rpt->inuse_relaylog_refcount_update();
 
-    if (in_event_group && group_rgi->parallel_entry->force_abort)
+    if (in_event_group && (group_rgi->parallel_entry->force_abort ||
+                           group_rgi->rli->abort_slave))
     {
       /*
         We are asked to abort, without getting the remaining events in the
@@ -1443,7 +1472,8 @@ handle_rpl_parallel_thread(void *arg)
         half-processed event group.
       */
       mysql_mutex_unlock(&rpt->LOCK_rpl_thread);
-      signal_error_to_sql_driver_thread(thd, group_rgi, 1);
+      signal_error_to_sql_driver_thread(thd, group_rgi, 1,
+        !thd->transaction.all.modified_non_trans_table);
       finish_event_group(rpt, group_rgi->gtid_sub_id,
                          group_rgi->parallel_entry, group_rgi);
       in_event_group= false;
@@ -2479,6 +2509,18 @@ rpl_parallel_entry::queue_master_restart(rpl_group_info *rgi,
   return 0;
 }
 
+bool rpl_parallel_entry::trx_is_next_to_commit(rpl_group_info *rgi)
+{
+  /*
+    Try to use last_committed_sub_id for this calculation; however, if no
+    transactions have been committed yet, calculate the starting sub_id with
+    (current_sub_id - count_queued_event_groups).
+  */
+  uint64 reference_sub_id= last_committed_sub_id
+                            ? last_committed_sub_id
+                            : ((current_sub_id - count_queued_event_groups));
+  return (rgi->gtid_sub_id > (reference_sub_id + 1));
+}
 
 int
 rpl_parallel::wait_for_workers_idle(THD *thd)
