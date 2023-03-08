@@ -826,6 +826,7 @@ SET binlog_format=@old_format;
 connection server_2;
 SET debug_sync='RESET';
 include/start_slave.inc
+SET debug_sync='now SIGNAL query_cont';
 SELECT * FROM t3 WHERE a >= 80 ORDER BY a;
 a	b
 80	0
