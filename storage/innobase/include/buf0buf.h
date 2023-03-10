@@ -782,11 +782,11 @@ public:
   it from buf_pool.flush_list */
   inline void write_complete(bool temporary);
 
-  /** Write a flushable page to a file. buf_pool.mutex must be held.
+  /** Write a flushable page to a file or free a freeable block.
   @param evict       whether to evict the page on write completion
   @param space       tablespace
-  @return whether the page was flushed and buf_pool.mutex was released */
-  inline bool flush(bool evict, fil_space_t *space);
+  @return whether a page write was initiated and buf_pool.mutex released */
+  bool flush(bool evict, fil_space_t *space);
 
   /** Notify that a page in a temporary tablespace has been modified. */
   void set_temp_modified()
@@ -856,8 +856,6 @@ public:
   /** @return whether the block is mapped to a data file */
   bool in_file() const { return state() >= FREED; }
 
-  /** @return whether the block is modified and ready for flushing */
-  inline bool ready_for_flush() const;
   /** @return whether the block can be relocated in memory.
   The block can be dirty, but it must not be I/O-fixed or bufferfixed. */
   inline bool can_relocate() const;
@@ -1030,10 +1028,10 @@ Compute the hash fold value for blocks in buf_pool.zip_hash. */
 #define BUF_POOL_ZIP_FOLD_BPAGE(b) BUF_POOL_ZIP_FOLD((buf_block_t*) (b))
 /* @} */
 
-/** A "Hazard Pointer" class used to iterate over page lists
-inside the buffer pool. A hazard pointer is a buf_page_t pointer
+/** A "Hazard Pointer" class used to iterate over buf_pool.LRU or
+buf_pool.flush_list. A hazard pointer is a buf_page_t pointer
 which we intend to iterate over next and we want it remain valid
-even after we release the buffer pool mutex. */
+even after we release the mutex that protects the list. */
 class HazardPointer
 {
 public:
@@ -1542,9 +1540,9 @@ public:
   ulint n_flush_LRU_;
   /** broadcast when n_flush_LRU reaches 0; protected by mutex */
   pthread_cond_t done_flush_LRU;
-  /** Number of pending flush_list flush; protected by mutex */
-  ulint n_flush_list_;
-  /** broadcast when n_flush_list reaches 0; protected by mutex */
+  /** whether a flush_list batch is active; protected by flush_list_mutex */
+  bool flush_list_active;
+  /** broadcast when a batch completes; protected by flush_list_mutex */
   pthread_cond_t done_flush_list;
 
 	/** @name General fields */
@@ -1719,7 +1717,8 @@ public:
   alignas(CPU_LEVEL1_DCACHE_LINESIZE) mysql_mutex_t flush_list_mutex;
   /** "hazard pointer" for flush_list scans; protected by flush_list_mutex */
   FlushHp flush_hp;
-  /** modified blocks (a subset of LRU) */
+  /** possibly modified persistent pages (a subset of LRU);
+  buf_dblwr.pending_writes() is approximately COUNT(is_write_fixed()) */
   UT_LIST_BASE_NODE_T(buf_page_t) flush_list;
 private:
   /** whether the page cleaner needs wakeup from indefinite sleep */
@@ -1752,9 +1751,6 @@ public:
     mysql_mutex_assert_owner(&flush_list_mutex);
     last_activity_count= activity_count;
   }
-
-  // n_flush_LRU_ + n_flush_list_
-  // is approximately COUNT(is_write_fixed()) in flush_list
 
 	unsigned	freed_page_clock;/*!< a sequence number used
 					to count the number of buffer
@@ -1844,28 +1840,19 @@ public:
     if (n_pend_reads)
       return true;
     mysql_mutex_lock(&mutex);
-    const bool any_pending{n_flush_LRU_ || n_flush_list_};
+    const bool any_pending= n_flush_LRU_ || flush_list_active ||
+      buf_dblwr.pending_writes();
     mysql_mutex_unlock(&mutex);
     return any_pending;
-  }
-  /** @return total amount of pending I/O */
-  TPOOL_SUPPRESS_TSAN ulint io_pending() const
-  {
-    return n_pend_reads + n_flush_LRU_ + n_flush_list_;
   }
 
 private:
   /** Remove a block from the flush list. */
   inline void delete_from_flush_list_low(buf_page_t *bpage);
-  /** Remove a block from flush_list.
-  @param bpage   buffer pool page
-  @param clear   whether to invoke buf_page_t::clear_oldest_modification() */
-  void delete_from_flush_list(buf_page_t *bpage, bool clear);
 public:
   /** Remove a block from flush_list.
   @param bpage   buffer pool page */
-  void delete_from_flush_list(buf_page_t *bpage)
-  { delete_from_flush_list(bpage, true); }
+  void delete_from_flush_list(buf_page_t *bpage);
 
   /** Insert a modified block into the flush list.
   @param block    modified block
@@ -1873,7 +1860,7 @@ public:
   void insert_into_flush_list(buf_block_t *block, lsn_t lsn);
 
   /** Free a page whose underlying file page has been freed. */
-  inline void release_freed_page(buf_page_t *bpage);
+  ATTRIBUTE_COLD void release_freed_page(buf_page_t *bpage);
 
 private:
   /** Temporary memory for page_compressed and encrypted I/O */
@@ -1991,17 +1978,6 @@ inline void buf_page_t::clear_oldest_modification()
   oldest_modification_acquire() will observe the block as
   being detached from buf_pool.flush_list, after reading the value 0. */
   oldest_modification_.store(0, std::memory_order_release);
-}
-
-/** @return whether the block is modified and ready for flushing */
-inline bool buf_page_t::ready_for_flush() const
-{
-  mysql_mutex_assert_owner(&buf_pool.mutex);
-  ut_ad(in_LRU_list);
-  const auto s= state();
-  ut_a(s >= FREED);
-  ut_ad(!fsp_is_system_temporary(id().space()) || oldest_modification() == 2);
-  return s < READ_FIX;
 }
 
 /** @return whether the block can be relocated in memory.
