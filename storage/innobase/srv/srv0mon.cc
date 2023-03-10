@@ -1411,10 +1411,8 @@ srv_mon_process_existing_counter(
 
 	/* Get the value from corresponding global variable */
 	switch (monitor_id) {
-	/* export_vars.innodb_buffer_pool_reads. Num Reads from
-	disk (page not in buffer) */
 	case MONITOR_OVLD_BUF_POOL_READS:
-		value = srv_stats.buf_pool_reads;
+		value = buf_pool.stat.n_pages_read;
 		break;
 
 	/* innodb_buffer_pool_read_requests, the number of logical
@@ -1475,7 +1473,7 @@ srv_mon_process_existing_counter(
 
 	/* innodb_buffer_pool_bytes_dirty */
 	case MONITOR_OVLD_BUF_POOL_BYTES_DIRTY:
-		value = buf_pool.stat.flush_list_bytes;
+		value = buf_pool.flush_list_bytes;
 		break;
 
 	/* innodb_buffer_pool_pages_free */

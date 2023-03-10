@@ -180,8 +180,8 @@ void buf_pool_t::insert_into_flush_list(buf_block_t *block, lsn_t lsn)
     delete_from_flush_list_low(&block->page);
   }
   else
-    stat.flush_list_bytes+= block->physical_size();
-  ut_ad(stat.flush_list_bytes <= curr_pool_size);
+    flush_list_bytes+= block->physical_size();
+  ut_ad(flush_list_bytes <= curr_pool_size);
 
   block->page.set_oldest_modification(lsn);
   MEM_CHECK_DEFINED(block->page.zip.data
@@ -198,7 +198,7 @@ void buf_pool_t::insert_into_flush_list(buf_block_t *block, lsn_t lsn)
 void buf_pool_t::delete_from_flush_list(buf_page_t *bpage)
 {
   delete_from_flush_list_low(bpage);
-  stat.flush_list_bytes-= bpage->physical_size();
+  flush_list_bytes-= bpage->physical_size();
   bpage->clear_oldest_modification();
 #ifdef UNIV_DEBUG
   buf_flush_validate_skip();
@@ -292,7 +292,7 @@ buf_flush_relocate_on_flush_list(
 	bpage->clear_oldest_modification();
 
 	if (lsn == 1) {
-		buf_pool.stat.flush_list_bytes -= dpage->physical_size();
+		buf_pool.flush_list_bytes -= dpage->physical_size();
 		dpage->list.prev = nullptr;
 		dpage->list.next = nullptr;
 		dpage->clear_oldest_modification();

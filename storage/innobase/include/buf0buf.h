@@ -1146,7 +1146,8 @@ struct buf_buddy_free_t {
 				/*!< Node of zip_free list */
 };
 
-/** @brief The buffer pool statistics structure. */
+/** @brief The buffer pool statistics structure;
+protected by buf_pool.mutex unless otherwise noted. */
 struct buf_pool_stat_t{
 	/** Initialize the counters */
 	void init() { memset((void*) this, 0, sizeof *this); }
@@ -1155,14 +1156,12 @@ struct buf_pool_stat_t{
 				/*!< number of page gets performed;
 				also successful searches through
 				the adaptive hash index are
-				counted as page gets; this field
-				is NOT protected by buf_pool.mutex */
-	ulint	n_pages_read;	/*!< number read operations;
+				counted as page gets;
 				NOT protected by buf_pool.mutex */
+	ulint	n_pages_read;	/*!< number read operations */
 	ulint	n_pages_written;/*!< number write operations */
 	ulint	n_pages_created;/*!< number of pages created
-				in the pool with no read;
-				protected by buf_pool.mutex */
+				in the pool with no read */
 	ulint	n_ra_pages_read_rnd;/*!< number of pages read in
 				as part of random read ahead */
 	ulint	n_ra_pages_read;/*!< number of pages read in
@@ -1176,10 +1175,9 @@ struct buf_pool_stat_t{
 				young because the first access
 				was not long enough ago, in
 				buf_page_peek_if_too_old() */
-	/** number of waits for eviction; writes protected by buf_pool.mutex */
+	/** number of waits for eviction */
 	ulint	LRU_waits;
 	ulint	LRU_bytes;	/*!< LRU size in bytes */
-	ulint	flush_list_bytes;/*!< flush_list size in bytes */
 };
 
 /** Statistics of buddy blocks of a given size. */
@@ -1537,6 +1535,10 @@ public:
 
   /** Buffer pool mutex */
   alignas(CPU_LEVEL1_DCACHE_LINESIZE) mysql_mutex_t mutex;
+  /** current statistics; protected by mutex */
+  buf_pool_stat_t stat;
+  /** old statistics; protected by mutex */
+  buf_pool_stat_t old_stat;
 
 	/** @name General fields */
 	/* @{ */
@@ -1697,8 +1699,6 @@ public:
 	buf_buddy_stat_t buddy_stat[BUF_BUDDY_SIZES_MAX + 1];
 					/*!< Statistics of buddy system,
 					indexed by block size */
-	buf_pool_stat_t	stat;		/*!< current statistics */
-	buf_pool_stat_t	old_stat;	/*!< old statistics */
 
 	/* @} */
 
@@ -1710,6 +1710,8 @@ public:
   alignas(CPU_LEVEL1_DCACHE_LINESIZE) mysql_mutex_t flush_list_mutex;
   /** "hazard pointer" for flush_list scans; protected by flush_list_mutex */
   FlushHp flush_hp;
+  /** flush_list size in bytes; protected by flush_list_mutex */
+  ulint flush_list_bytes;
   /** possibly modified persistent pages (a subset of LRU);
   buf_dblwr.pending_writes() is approximately COUNT(is_write_fixed()) */
   UT_LIST_BASE_NODE_T(buf_page_t) flush_list;

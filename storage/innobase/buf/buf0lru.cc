@@ -136,7 +136,6 @@ static void buf_LRU_block_free_hashed_page(buf_block_t *block)
 @param[in]	bpage		control block */
 static inline void incr_LRU_size_in_bytes(const buf_page_t* bpage)
 {
-	/* FIXME: use atomics, not mutex */
 	mysql_mutex_assert_owner(&buf_pool.mutex);
 
 	buf_pool.stat.LRU_bytes += bpage->physical_size();
