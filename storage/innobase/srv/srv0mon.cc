@@ -909,7 +909,7 @@ static monitor_info_t	innodb_counter_info[] =
 	 MONITOR_DEFAULT_START, MONITOR_MODULE_INDEX},
 
 	{"index_page_splits", "index", "Number of index page splits",
-	 MONITOR_NONE,
+	 MONITOR_EXISTING,
 	 MONITOR_DEFAULT_START, MONITOR_INDEX_SPLIT},
 
 	{"index_page_merge_attempts", "index",
@@ -1411,6 +1411,10 @@ srv_mon_process_existing_counter(
 
 	/* Get the value from corresponding global variable */
 	switch (monitor_id) {
+	case MONITOR_INDEX_SPLIT:
+		value = buf_pool.pages_split;
+		break;
+
 	case MONITOR_OVLD_BUF_POOL_READS:
 		value = buf_pool.stat.n_pages_read;
 		break;

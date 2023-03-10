@@ -1702,6 +1702,9 @@ public:
 
 	/* @} */
 
+  /** number of index page splits */
+  Atomic_counter<ulint> pages_split;
+
   /** @name Page flushing algorithm fields */
   /* @{ */
 
