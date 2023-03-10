@@ -371,7 +371,7 @@ void buf_page_write_complete(const IORequest &request)
 
     buf_LRU_free_page(bpage, true);
     buf_pool.try_LRU_scan= true;
-    pthread_cond_signal(&buf_pool.done_free);
+    pthread_cond_broadcast(&buf_pool.done_free);
     mysql_mutex_unlock(&buf_pool.mutex);
 
     mysql_mutex_lock(&buf_pool.flush_list_mutex);
@@ -1694,7 +1694,7 @@ ulint buf_flush_LRU(ulint max_n, bool evict)
   if (n.evicted)
   {
     buf_pool.try_LRU_scan= true;
-    pthread_cond_signal(&buf_pool.done_free);
+    pthread_cond_broadcast(&buf_pool.done_free);
   }
 
   if (!evict)

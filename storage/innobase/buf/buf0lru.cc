@@ -450,7 +450,10 @@ got_block:
 		if (n_flush < 2) {
 			break;
 		}
-		my_cond_wait(&buf_pool.done_free, &buf_pool.mutex.m_mutex);
+		if (buf_pool.try_LRU_scan) {
+			my_cond_wait(&buf_pool.done_free,
+				     &buf_pool.mutex.m_mutex);
+		}
 	}
 
 #ifndef DBUG_OFF
