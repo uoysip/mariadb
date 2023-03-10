@@ -1911,6 +1911,53 @@ static int innobase_wsrep_get_checkpoint(handlerton* hton, XID* xid);
 #define normalize_table_name(a,b) \
 	normalize_table_name_c_low(a,b,IF_WIN(true,false))
 
+
+/** Create a new stub table for import.
+@param[in]	thd		Connection
+@param[in]	name		Table name, format: "db/table_name".
+@param[in,out]	create_info	The create info for creating a stub.
+@return	0 if success else error number. */
+static int prepare_create_stub_for_import(THD *thd, const char *name,
+                                          HA_CREATE_INFO& create_info)
+{
+  DBUG_ENTER("ha_innobase::create_stub_for_import");
+  char norm_name[FN_REFLEN];
+  normalize_table_name(norm_name, name);
+  FetchIndexRootPages fetchIndexRootPages(name);
+  if (fil_tablespace_iterate(fil_path_to_mysql_datadir, name, IO_BUFFER_SIZE(srv_page_size), fetchIndexRootPages) != DB_SUCCESS)
+  {
+    sql_print_error("InnoDB: failed to get row format from ibd for %s.\n",
+                    norm_name);
+    DBUG_RETURN(ER_INNODB_IMPORT_ERROR);
+  }
+  create_info.init();
+  // get the row format from ibd
+  create_info.row_type = fetchIndexRootPages.m_row_format;
+  // if .cfg exists, get the row format from cfg, and compare with
+  // ibd, report error if different, except when cfg reports
+  // compact/dynamic and ibd reports not_used (indicating either
+  // compact or dynamic but not sure)
+  enum rec_format_enum rec_format_from_cfg;
+  if (get_row_type_from_cfg(fil_path_to_mysql_datadir, name, thd, rec_format_from_cfg) == DB_SUCCESS)
+  {
+    // if ibd reports not_used but cfg reports compact or dynamic, go
+    // with cfg.
+    if (create_info.row_type != from_rec_format(rec_format_from_cfg) &&
+        !((rec_format_from_cfg == REC_FORMAT_COMPACT ||
+           rec_format_from_cfg == REC_FORMAT_DYNAMIC) &&
+          create_info.row_type == ROW_TYPE_NOT_USED))
+    {
+      sql_print_error("InnoDB: cfg and ibd disagree on row format for table %s.\n",
+                      norm_name);
+      DBUG_RETURN(ER_INNODB_IMPORT_ERROR);
+    }
+    else
+      create_info.row_type= from_rec_format(rec_format_from_cfg);
+  } else if (create_info.row_type == ROW_TYPE_NOT_USED)
+    create_info.row_type = ROW_TYPE_DYNAMIC;
+  DBUG_RETURN(0);
+}
+
 ulonglong ha_innobase::table_version() const
 {
   /* This is either "garbage" or something that was assigned
@@ -5870,9 +5917,22 @@ ha_innobase::open(const char* name, int, uint)
 	TABLE ... DISCARD TABLESPACE. */
 	if (!ib_table && thd_ddl_options(thd)->import_tablespace())
         {
-                int err;
-                if ((err= create_stub_for_import(name)))
+                HA_CREATE_INFO create_info;
+                if (int err= prepare_create_stub_for_import(thd, name,
+                                                            create_info))
                         DBUG_RETURN(err);
+                trx_t *trx= innobase_trx_allocate(thd);
+                trx_start_for_ddl(trx);
+                if (lock_sys_tables(trx) == DB_SUCCESS)
+                {
+                        row_mysql_lock_data_dictionary(trx);
+                        create(name, table, &create_info, true, trx);
+                        trx->commit();
+                        row_mysql_unlock_data_dictionary(trx);
+                }
+                else
+                        trx->rollback();
+                trx->free();
 		DBUG_EXECUTE_IF("die_after_create_stub_for_import", ut_ad(0););
                 ib_table = open_dict_table(name, norm_name, is_part,
                                            DICT_ERR_IGNORE_FK_NOKEY);
@@ -13221,63 +13281,6 @@ int ha_innobase::create(const char *name, TABLE *form,
                         HA_CREATE_INFO *create_info)
 {
   return create(name, form, create_info, srv_file_per_table);
-}
-
-/** Create a new stub table for import.
-@param[in]	name		Table name, format: "db/table_name".
-@return	0 if success else error number. */
-int ha_innobase::create_stub_for_import(const char *name)
-{
-  DBUG_ENTER("ha_innobase::create_stub_for_import");
-  char norm_name[FN_REFLEN];
-  normalize_table_name(norm_name, name);
-  THD* thd = ha_thd();
-  FetchIndexRootPages fetchIndexRootPages(name);
-  if (fil_tablespace_iterate(fil_path_to_mysql_datadir, name, IO_BUFFER_SIZE(srv_page_size), fetchIndexRootPages) != DB_SUCCESS)
-  {
-    sql_print_error("InnoDB: failed to get row format from ibd for %s.\n",
-                    norm_name);
-    DBUG_RETURN(ER_INNODB_IMPORT_ERROR);
-  }
-  HA_CREATE_INFO create_info;
-  create_info.init();
-  // get the row format from ibd
-  create_info.row_type = fetchIndexRootPages.m_row_format;
-  // if .cfg exists, get the row format from cfg, and compare with
-  // ibd, report error if different, except when cfg reports
-  // compact/dynamic and ibd reports not_used (indicating either
-  // compact or dynamic but not sure)
-  enum rec_format_enum rec_format_from_cfg;
-  if (get_row_type_from_cfg(fil_path_to_mysql_datadir, name, thd, rec_format_from_cfg) == DB_SUCCESS)
-  {
-    // if ibd reports not_used but cfg reports compact or dynamic, go
-    // with cfg.
-    if (create_info.row_type != from_rec_format(rec_format_from_cfg) &&
-        !((rec_format_from_cfg == REC_FORMAT_COMPACT ||
-           rec_format_from_cfg == REC_FORMAT_DYNAMIC) &&
-          create_info.row_type == ROW_TYPE_NOT_USED))
-    {
-      sql_print_error("InnoDB: cfg and ibd disagree on row format for table %s.\n",
-                      norm_name);
-      DBUG_RETURN(ER_INNODB_IMPORT_ERROR);
-    }
-    else
-      create_info.row_type= from_rec_format(rec_format_from_cfg);
-  } else if (create_info.row_type == ROW_TYPE_NOT_USED)
-    create_info.row_type = ROW_TYPE_DYNAMIC;
-  trx_t *trx= innobase_trx_allocate(thd);
-  trx_start_for_ddl(trx);
-  if (lock_sys_tables(trx) == DB_SUCCESS)
-  {
-    row_mysql_lock_data_dictionary(trx);
-    create(name, table, &create_info, true, trx);
-    trx->commit();
-    row_mysql_unlock_data_dictionary(trx);
-  }
-  else
-    trx->rollback();
-  trx->free();
-  DBUG_RETURN(0);
 }
 
 

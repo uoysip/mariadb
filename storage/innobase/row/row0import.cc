@@ -481,7 +481,10 @@ page, as we can't get that from the tablespace header flags alone.
 dberr_t
 FetchIndexRootPages::operator()(buf_block_t *block) UNIV_NOTHROW
 {
-  ut_ad(!creating_table);
+  /* m_table_name is non-null iff we are trying to create a (stub)
+   table, and there's no table to compare the fsp flags and row format
+   against. */
+  ut_ad(!m_table_name);
 
 	if (is_interrupted()) return DB_INTERRUPTED;
 
@@ -3496,7 +3499,10 @@ page_corrupted:
            && buf_page_is_corrupted(false, readptr, m_space_flags))
     goto page_corrupted;
 
-  if (creating_table)
+  /* m_table_name is non-null iff we are trying to create a (stub)
+  table, in which case we want to get row format for the table
+  creation. */
+  if (m_table_name)
     m_row_format = get_row_format(block);
   else
     err= this->operator()(block);
