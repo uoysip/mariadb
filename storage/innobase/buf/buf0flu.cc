@@ -372,12 +372,13 @@ void buf_page_write_complete(const IORequest &request)
     buf_LRU_free_page(bpage, true);
     buf_pool.try_LRU_scan= true;
     pthread_cond_signal(&buf_pool.done_free);
-
-    ut_ad(buf_pool.n_flush_LRU_);
-    if (!--buf_pool.n_flush_LRU_)
-      pthread_cond_broadcast(&buf_pool.done_flush_LRU);
-
     mysql_mutex_unlock(&buf_pool.mutex);
+
+    mysql_mutex_lock(&buf_pool.flush_list_mutex);
+    ut_ad(buf_pool.n_flush >= 2);
+    if ((buf_pool.n_flush-= 2) < 2)
+      pthread_cond_broadcast(&buf_pool.done_flush_LRU);
+    mysql_mutex_unlock(&buf_pool.flush_list_mutex);
   }
   else
   {
@@ -761,6 +762,7 @@ bool buf_page_t::flush(bool evict, fil_space_t *space)
   ut_ad(in_LRU_list);
   ut_ad((space->purpose == FIL_TYPE_TEMPORARY) ==
         (space == fil_system.temp_space));
+  ut_ad(evict || space != fil_system.temp_space);
   ut_ad(space->referenced());
 
   const auto s= state();
@@ -775,21 +777,22 @@ bool buf_page_t::flush(bool evict, fil_space_t *space)
   ut_d(const auto f=) zip.fix.fetch_add(WRITE_FIX - UNFIXED);
   ut_ad(f >= UNFIXED);
   ut_ad(f < READ_FIX);
-  if (evict)
-  {
-    ut_ad(buf_pool.n_flush_LRU_ < ULINT_UNDEFINED);
-    buf_pool.n_flush_LRU_++;
-    ut_ad((space == fil_system.temp_space)
-          ? oldest_modification() == 2
-          : oldest_modification() > 2);
-  }
-  else
-  {
-    ut_ad(space != fil_system.temp_space);
-    ut_ad(oldest_modification() > 2);
-  }
+  ut_ad((space == fil_system.temp_space)
+        ? oldest_modification() == 2
+        : oldest_modification() > 2);
 
+  /* Increment the I/O operation count used for selecting LRU policy. */
+  buf_LRU_stat_inc_io();
   mysql_mutex_unlock(&buf_pool.mutex);
+
+  IORequest::Type type= IORequest::WRITE_ASYNC;
+  if (UNIV_UNLIKELY(evict))
+  {
+    type= IORequest::WRITE_LRU;
+    mysql_mutex_lock(&buf_pool.flush_list_mutex);
+    buf_pool.n_flush+= 2;
+    mysql_mutex_unlock(&buf_pool.flush_list_mutex);
+  }
 
   /* Apart from the U-lock, this block will also be protected by
   is_write_fixed() and oldest_modification()>1.
@@ -807,7 +810,6 @@ bool buf_page_t::flush(bool evict, fil_space_t *space)
 #if defined HAVE_FALLOC_PUNCH_HOLE_AND_KEEP_SIZE || defined _WIN32
   size_t orig_size;
 #endif
-  IORequest::Type type= evict ? IORequest::WRITE_LRU : IORequest::WRITE_ASYNC;
   buf_tmp_buffer_t *slot= nullptr;
 
   if (UNIV_UNLIKELY(!frame)) /* ROW_FORMAT=COMPRESSED */
@@ -851,7 +853,10 @@ bool buf_page_t::flush(bool evict, fil_space_t *space)
     {
       switch (space->chain.start->punch_hole) {
       case 1:
-        type= evict ? IORequest::PUNCH_LRU : IORequest::PUNCH;
+        static_assert(IORequest::PUNCH_LRU - IORequest::PUNCH ==
+                      IORequest::WRITE_LRU - IORequest::WRITE_ASYNC, "");
+        type=
+          IORequest::Type(type + (IORequest::PUNCH - IORequest::WRITE_ASYNC));
         break;
       case 2:
         size= orig_size;
@@ -881,9 +886,6 @@ bool buf_page_t::flush(bool evict, fil_space_t *space)
   else
     buf_dblwr.add_to_batch(IORequest{this, slot, space->chain.start, type},
                            size);
-
-  /* Increment the I/O operation count used for selecting LRU policy. */
-  buf_LRU_stat_inc_io();
   return true;
 }
 
@@ -1473,13 +1475,17 @@ static ulint buf_do_flush_list_batch(ulint max_n, lsn_t lsn)
 /** Wait until a LRU flush batch ends. */
 void buf_flush_wait_LRU_batch_end()
 {
-  if (buf_pool.n_flush_LRU_)
+  mysql_mutex_assert_owner(&buf_pool.flush_list_mutex);
+  mysql_mutex_assert_not_owner(&buf_pool.mutex);
+
+  if (buf_pool.n_flush > 1)
   {
     tpool::tpool_wait_begin();
     thd_wait_begin(nullptr, THD_WAIT_DISKIO);
     do
-      my_cond_wait(&buf_pool.done_flush_LRU, &buf_pool.mutex.m_mutex);
-    while (buf_pool.n_flush_LRU_);
+      my_cond_wait(&buf_pool.done_flush_LRU,
+                   &buf_pool.flush_list_mutex.m_mutex);
+    while (buf_pool.n_flush > 1);
     tpool::tpool_wait_end();
     thd_wait_end(nullptr);
   }
@@ -1499,7 +1505,7 @@ static ulint buf_flush_list_holding_mutex(ulint max_n= ULINT_UNDEFINED,
   mysql_mutex_assert_owner(&buf_pool.mutex);
 
   mysql_mutex_lock(&buf_pool.flush_list_mutex);
-  if (buf_pool.flush_list_active)
+  if (buf_pool.n_flush & 1)
   {
 nothing_to_do:
     mysql_mutex_unlock(&buf_pool.flush_list_mutex);
@@ -1510,11 +1516,12 @@ nothing_to_do:
     pthread_cond_broadcast(&buf_pool.done_flush_list);
     goto nothing_to_do;
   }
-  buf_pool.flush_list_active= true;
+  buf_pool.n_flush++;
   const ulint n_flushed= buf_do_flush_list_batch(max_n, lsn);
   if (n_flushed)
     buf_pool.stat.n_pages_written+= n_flushed;
-  buf_pool.flush_list_active= false;
+  ut_ad(buf_pool.n_flush & 1);
+  buf_pool.n_flush--;
   pthread_cond_broadcast(&buf_pool.done_flush_list);
   mysql_mutex_unlock(&buf_pool.flush_list_mutex);
 
@@ -1672,9 +1679,13 @@ ulint buf_flush_LRU(ulint max_n, bool evict)
 
   if (evict)
   {
-    if (buf_pool.n_flush_LRU_)
+    mysql_mutex_lock(&buf_pool.flush_list_mutex);
+    const auto n= buf_pool.n_flush;
+    if (n <= 1)
+      buf_pool.n_flush= n + 2;
+    mysql_mutex_unlock(&buf_pool.flush_list_mutex);
+    if (n > 1)
       return 0;
-    buf_pool.n_flush_LRU_= 1;
   }
 
   flush_counters_t n;
@@ -1689,8 +1700,11 @@ ulint buf_flush_LRU(ulint max_n, bool evict)
   if (!evict)
     return n.flushed;
 
-  if (!--buf_pool.n_flush_LRU_)
+  mysql_mutex_lock(&buf_pool.flush_list_mutex);
+  ut_ad(buf_pool.n_flush > 1);
+  if ((buf_pool.n_flush-= 2) < 2)
     pthread_cond_broadcast(&buf_pool.done_flush_LRU);
+  mysql_mutex_unlock(&buf_pool.flush_list_mutex);
 
   return n.evicted + n.flushed;
 }
@@ -2369,9 +2383,9 @@ static void buf_flush_page_cleaner()
   if (srv_fast_shutdown != 2)
   {
     buf_dblwr.flush_buffered_writes();
-    mysql_mutex_lock(&buf_pool.mutex);
+    mysql_mutex_lock(&buf_pool.flush_list_mutex);
     buf_flush_wait_LRU_batch_end();
-    mysql_mutex_unlock(&buf_pool.mutex);
+    mysql_mutex_unlock(&buf_pool.flush_list_mutex);
     buf_dblwr.wait_for_page_writes();
   }
 

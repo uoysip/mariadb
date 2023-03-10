@@ -1156,12 +1156,13 @@ struct buf_pool_stat_t{
 				also successful searches through
 				the adaptive hash index are
 				counted as page gets; this field
-				is NOT protected by the buffer
-				pool mutex */
-	ulint	n_pages_read;	/*!< number read operations */
+				is NOT protected by buf_pool.mutex */
+	ulint	n_pages_read;	/*!< number read operations;
+				NOT protected by buf_pool.mutex */
 	ulint	n_pages_written;/*!< number write operations */
 	ulint	n_pages_created;/*!< number of pages created
-				in the pool with no read */
+				in the pool with no read;
+				protected by buf_pool.mutex */
 	ulint	n_ra_pages_read_rnd;/*!< number of pages read in
 				as part of random read ahead */
 	ulint	n_ra_pages_read;/*!< number of pages read in
@@ -1536,14 +1537,6 @@ public:
 
   /** Buffer pool mutex */
   alignas(CPU_LEVEL1_DCACHE_LINESIZE) mysql_mutex_t mutex;
-  /** Number of pending LRU flush; protected by mutex. */
-  ulint n_flush_LRU_;
-  /** broadcast when n_flush_LRU reaches 0; protected by mutex */
-  pthread_cond_t done_flush_LRU;
-  /** whether a flush_list batch is active; protected by flush_list_mutex */
-  bool flush_list_active;
-  /** broadcast when a batch completes; protected by flush_list_mutex */
-  pthread_cond_t done_flush_list;
 
 	/** @name General fields */
 	/* @{ */
@@ -1720,6 +1713,8 @@ public:
   /** possibly modified persistent pages (a subset of LRU);
   buf_dblwr.pending_writes() is approximately COUNT(is_write_fixed()) */
   UT_LIST_BASE_NODE_T(buf_page_t) flush_list;
+  /** Number of pending LRU flush * 2 + flush_list_active flag */
+  unsigned n_flush;
 private:
   /** whether the page cleaner needs wakeup from indefinite sleep */
   bool page_cleaner_is_idle;
@@ -1728,6 +1723,10 @@ private:
 public:
   /** signalled to wake up the page_cleaner; protected by flush_list_mutex */
   pthread_cond_t do_flush_list;
+  /** broadcast when !(n_flush >> 1); protected by flush_list_mutex */
+  pthread_cond_t done_flush_LRU;
+  /** broadcast when a batch completes; protected by flush_list_mutex */
+  pthread_cond_t done_flush_list;
 
   /** @return whether the page cleaner must sleep due to being idle */
   bool page_cleaner_idle() const
@@ -1839,10 +1838,9 @@ public:
   {
     if (n_pend_reads)
       return true;
-    mysql_mutex_lock(&mutex);
-    const bool any_pending= n_flush_LRU_ || flush_list_active ||
-      buf_dblwr.pending_writes();
-    mysql_mutex_unlock(&mutex);
+    mysql_mutex_lock(&flush_list_mutex);
+    const bool any_pending= n_flush || buf_dblwr.pending_writes();
+    mysql_mutex_unlock(&flush_list_mutex);
     return any_pending;
   }
 

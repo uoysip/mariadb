@@ -445,7 +445,10 @@ got_block:
 		if ((block = buf_LRU_get_free_only()) != nullptr) {
 			goto got_block;
 		}
-		if (!buf_pool.n_flush_LRU_) {
+		mysql_mutex_lock(&buf_pool.flush_list_mutex);
+		const auto n_flush = buf_pool.n_flush;
+		mysql_mutex_unlock(&buf_pool.flush_list_mutex);
+		if (n_flush < 2) {
 			break;
 		}
 		my_cond_wait(&buf_pool.done_free, &buf_pool.mutex.m_mutex);

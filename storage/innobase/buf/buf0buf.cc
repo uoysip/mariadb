@@ -1401,8 +1401,10 @@ inline bool buf_pool_t::withdraw_blocks()
 				true);
 			mysql_mutex_unlock(&buf_pool.mutex);
 			buf_dblwr.flush_buffered_writes();
-			mysql_mutex_lock(&buf_pool.mutex);
+			mysql_mutex_lock(&buf_pool.flush_list_mutex);
 			buf_flush_wait_LRU_batch_end();
+			mysql_mutex_unlock(&buf_pool.flush_list_mutex);
+			mysql_mutex_lock(&buf_pool.mutex);
 		}
 
 		/* relocate blocks/buddies in withdrawn area */
@@ -3279,12 +3281,12 @@ retry:
     buf_unzip_LRU_add_block(reinterpret_cast<buf_block_t*>(bpage), FALSE);
   }
 
+  buf_pool.stat.n_pages_created++;
   mysql_mutex_unlock(&buf_pool.mutex);
 
   mtr->memo_push(reinterpret_cast<buf_block_t*>(bpage), MTR_MEMO_PAGE_X_FIX);
 
   bpage->set_accessed();
-  buf_pool.stat.n_pages_created++;
 
   /* Delete possible entries for the page from the insert buffer:
   such can exist if the page belonged to an index which was dropped */
@@ -3836,7 +3838,7 @@ void buf_pool_t::print()
 		<< UT_LIST_GET_LEN(flush_list)
 		<< ", n pending decompressions=" << n_pend_unzip
 		<< ", n pending reads=" << n_pend_reads
-		<< ", n pending flush LRU=" << n_flush_LRU_
+		<< ", n pending flush LRU=" << (n_flush >> 1)
 		<< " list=" << buf_dblwr.pending_writes()
 		<< ", pages made young=" << stat.n_pages_made_young
 		<< ", not young=" << stat.n_pages_not_made_young
@@ -3953,7 +3955,7 @@ void buf_stats_get_pool_info(buf_pool_info_t *pool_info)
 
 	pool_info->n_pend_reads = buf_pool.n_pend_reads;
 
-	pool_info->n_pending_flush_lru = buf_pool.n_flush_LRU_;
+	pool_info->n_pending_flush_lru = buf_pool.n_flush >> 1;
 
 	pool_info->n_pending_flush_list = buf_dblwr.pending_writes();
 
