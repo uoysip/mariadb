@@ -51,187 +51,187 @@ tablespace file.  */
 class AbstractCallback
 {
 public:
-	/** Constructor
-	@param trx covering transaction */
-	AbstractCallback(trx_t* trx, uint32_t space_id)
-		:
-		m_zip_size(0),
-		m_trx(trx),
-		m_space(space_id),
-		m_xdes(),
-		m_xdes_page_no(UINT32_MAX),
-		m_space_flags(UINT32_MAX) UNIV_NOTHROW { }
+  /** Constructor
+  @param trx covering transaction */
+  AbstractCallback(trx_t* trx, uint32_t space_id)
+    :
+    m_zip_size(0),
+    m_trx(trx),
+    m_space(space_id),
+    m_xdes(),
+    m_xdes_page_no(UINT32_MAX),
+    m_space_flags(UINT32_MAX) UNIV_NOTHROW { }
 
-	/** Free any extent descriptor instance */
-	virtual ~AbstractCallback()
-	{
-		UT_DELETE_ARRAY(m_xdes);
-	}
+  /** Free any extent descriptor instance */
+  virtual ~AbstractCallback()
+  {
+    UT_DELETE_ARRAY(m_xdes);
+  }
 
-	/** Determine the page size to use for traversing the tablespace
-	@param file_size size of the tablespace file in bytes
-	@param block contents of the first page in the tablespace file.
-	@retval DB_SUCCESS or error code. */
-	virtual dberr_t init(
-		os_offset_t		file_size,
-		const buf_block_t*	block) UNIV_NOTHROW;
+  /** Determine the page size to use for traversing the tablespace
+  @param file_size size of the tablespace file in bytes
+  @param block contents of the first page in the tablespace file.
+  @retval DB_SUCCESS or error code. */
+  virtual dberr_t init(
+    os_offset_t     file_size,
+    const buf_block_t*  block) UNIV_NOTHROW;
 
-	/** @return true if compressed table. */
-	bool is_compressed_table() const UNIV_NOTHROW
-	{
-		return get_zip_size();
-	}
+  /** @return true if compressed table. */
+  bool is_compressed_table() const UNIV_NOTHROW
+  {
+    return get_zip_size();
+  }
 
-	/** @return the tablespace flags */
-	uint32_t get_space_flags() const { return m_space_flags; }
+  /** @return the tablespace flags */
+  uint32_t get_space_flags() const { return m_space_flags; }
 
-	/**
-	Set the name of the physical file and the file handle that is used
-	to open it for the file that is being iterated over.
-	@param filename the physical name of the tablespace file
-	@param file OS file handle */
-	void set_file(const char* filename, pfs_os_file_t file) UNIV_NOTHROW
-	{
-		m_file = file;
-		m_filepath = filename;
-	}
+  /**
+  Set the name of the physical file and the file handle that is used
+  to open it for the file that is being iterated over.
+  @param filename the physical name of the tablespace file
+  @param file OS file handle */
+  void set_file(const char* filename, pfs_os_file_t file) UNIV_NOTHROW
+  {
+    m_file = file;
+    m_filepath = filename;
+  }
 
-	ulint get_zip_size() const { return m_zip_size; }
-	ulint physical_size() const
-	{
-		return m_zip_size ? m_zip_size : srv_page_size;
-	}
+  ulint get_zip_size() const { return m_zip_size; }
+  ulint physical_size() const
+  {
+    return m_zip_size ? m_zip_size : srv_page_size;
+  }
 
-	const char* filename() const { return m_filepath; }
+  const char* filename() const { return m_filepath; }
 
-	/**
-	Called for every page in the tablespace. If the page was not
-	updated then its state must be set to BUF_PAGE_NOT_USED. For
-	compressed tables the page descriptor memory will be at offset:
-		block->page.frame + srv_page_size;
-	@param block block read from file, note it is not from the buffer pool
-	@retval DB_SUCCESS or error code. */
-	virtual dberr_t operator()(buf_block_t* block) UNIV_NOTHROW = 0;
+  /**
+  Called for every page in the tablespace. If the page was not
+  updated then its state must be set to BUF_PAGE_NOT_USED. For
+  compressed tables the page descriptor memory will be at offset:
+    block->page.frame + srv_page_size;
+  @param block block read from file, note it is not from the buffer pool
+  @retval DB_SUCCESS or error code. */
+  virtual dberr_t operator()(buf_block_t* block) UNIV_NOTHROW = 0;
 
-	/** @return the tablespace identifier */
-	uint32_t get_space_id() const { return m_space; }
+  /** @return the tablespace identifier */
+  uint32_t get_space_id() const { return m_space; }
 
-	bool is_interrupted() const { return trx_is_interrupted(m_trx); }
+  bool is_interrupted() const { return trx_is_interrupted(m_trx); }
 
-	/**
-	Get the data page depending on the table type, compressed or not.
-	@param block - block read from disk
-	@retval the buffer frame */
-	static byte* get_frame(const buf_block_t* block)
-	{
-		return block->page.zip.data
-			? block->page.zip.data : block->page.frame;
-	}
+  /**
+  Get the data page depending on the table type, compressed or not.
+  @param block - block read from disk
+  @retval the buffer frame */
+  static byte* get_frame(const buf_block_t* block)
+  {
+    return block->page.zip.data
+      ? block->page.zip.data : block->page.frame;
+  }
 
-	/** Invoke the functionality for the callback */
-	virtual dberr_t run(const fil_iterator_t& iter,
-			    buf_block_t* block) UNIV_NOTHROW = 0;
-
-protected:
-	/** Get the physical offset of the extent descriptor within the page.
-	@param page_no page number of the extent descriptor
-	@param page contents of the page containing the extent descriptor.
-	@return the start of the xdes array in a page */
-	const xdes_t* xdes(
-		ulint		page_no,
-		const page_t*	page) const UNIV_NOTHROW
-	{
-		ulint	offset;
-
-		offset = xdes_calc_descriptor_index(get_zip_size(), page_no);
-
-		return(page + XDES_ARR_OFFSET + XDES_SIZE * offset);
-	}
-
-	/** Set the current page directory (xdes). If the extent descriptor is
-	marked as free then free the current extent descriptor and set it to
-	0. This implies that all pages that are covered by this extent
-	descriptor are also freed.
-
-	@param page_no offset of page within the file
-	@param page page contents
-	@return DB_SUCCESS or error code. */
-	dberr_t	set_current_xdes(
-		uint32_t	page_no,
-		const page_t*	page) UNIV_NOTHROW
-	{
-		m_xdes_page_no = page_no;
-
-		UT_DELETE_ARRAY(m_xdes);
-		m_xdes = NULL;
-
-		if (mach_read_from_4(XDES_ARR_OFFSET + XDES_STATE + page)
-		    != XDES_FREE) {
-			const ulint physical_size = m_zip_size
-				? m_zip_size : srv_page_size;
-
-			m_xdes = UT_NEW_ARRAY_NOKEY(xdes_t, physical_size);
-
-			/* Trigger OOM */
-			DBUG_EXECUTE_IF(
-				"ib_import_OOM_13",
-				UT_DELETE_ARRAY(m_xdes);
-				m_xdes = NULL;
-			);
-
-			if (m_xdes == NULL) {
-				return(DB_OUT_OF_MEMORY);
-			}
-
-			memcpy(m_xdes, page, physical_size);
-		}
-
-		return(DB_SUCCESS);
-	}
-
-	/** Check if the page is marked as free in the extent descriptor.
-	@param page_no page number to check in the extent descriptor.
-	@return true if the page is marked as free */
-	bool is_free(uint32_t page_no) const UNIV_NOTHROW
-	{
-		ut_a(xdes_calc_descriptor_page(get_zip_size(), page_no)
-		     == m_xdes_page_no);
-
-		if (m_xdes != 0) {
-			const xdes_t*	xdesc = xdes(page_no, m_xdes);
-			ulint		pos = page_no % FSP_EXTENT_SIZE;
-
-			return xdes_is_free(xdesc, pos);
-		}
-
-		/* If the current xdes was free, the page must be free. */
-		return(true);
-	}
+  /** Invoke the functionality for the callback */
+  virtual dberr_t run(const fil_iterator_t& iter,
+          buf_block_t* block) UNIV_NOTHROW = 0;
 
 protected:
-	/** The ROW_FORMAT=COMPRESSED page size, or 0. */
-	ulint			m_zip_size;
+  /** Get the physical offset of the extent descriptor within the page.
+  @param page_no page number of the extent descriptor
+  @param page contents of the page containing the extent descriptor.
+  @return the start of the xdes array in a page */
+  const xdes_t* xdes(
+    ulint     page_no,
+    const page_t*   page) const UNIV_NOTHROW
+  {
+    ulint   offset;
 
-	/** File handle to the tablespace */
-	pfs_os_file_t		m_file;
+    offset = xdes_calc_descriptor_index(get_zip_size(), page_no);
 
-	/** Physical file path. */
-	const char*		m_filepath;
+    return(page + XDES_ARR_OFFSET + XDES_SIZE * offset);
+  }
 
-	/** Covering transaction. */
-	trx_t*			m_trx;
+  /** Set the current page directory (xdes). If the extent descriptor is
+  marked as free then free the current extent descriptor and set it to
+  0. This implies that all pages that are covered by this extent
+  descriptor are also freed.
 
-	/** Space id of the file being iterated over. */
-	uint32_t		m_space;
+  @param page_no offset of page within the file
+  @param page page contents
+  @return DB_SUCCESS or error code. */
+  dberr_t   set_current_xdes(
+    uint32_t  page_no,
+    const page_t*   page) UNIV_NOTHROW
+  {
+    m_xdes_page_no = page_no;
 
-	/** Current extent descriptor page */
-	xdes_t*			m_xdes;
+    UT_DELETE_ARRAY(m_xdes);
+    m_xdes = NULL;
 
-	/** Physical page offset in the file of the extent descriptor */
-	uint32_t		m_xdes_page_no;
+    if (mach_read_from_4(XDES_ARR_OFFSET + XDES_STATE + page)
+        != XDES_FREE) {
+      const ulint physical_size = m_zip_size
+        ? m_zip_size : srv_page_size;
 
-	/** Flags value read from the header page */
-	uint32_t		m_space_flags;
+      m_xdes = UT_NEW_ARRAY_NOKEY(xdes_t, physical_size);
+
+      /* Trigger OOM */
+      DBUG_EXECUTE_IF(
+        "ib_import_OOM_13",
+        UT_DELETE_ARRAY(m_xdes);
+        m_xdes = NULL;
+      );
+
+      if (m_xdes == NULL) {
+        return(DB_OUT_OF_MEMORY);
+      }
+
+      memcpy(m_xdes, page, physical_size);
+    }
+
+    return(DB_SUCCESS);
+  }
+
+  /** Check if the page is marked as free in the extent descriptor.
+  @param page_no page number to check in the extent descriptor.
+  @return true if the page is marked as free */
+  bool is_free(uint32_t page_no) const UNIV_NOTHROW
+  {
+    ut_a(xdes_calc_descriptor_page(get_zip_size(), page_no)
+         == m_xdes_page_no);
+
+    if (m_xdes != 0) {
+      const xdes_t*   xdesc = xdes(page_no, m_xdes);
+      ulint     pos = page_no % FSP_EXTENT_SIZE;
+
+      return xdes_is_free(xdesc, pos);
+    }
+
+    /* If the current xdes was free, the page must be free. */
+    return(true);
+  }
+
+protected:
+  /** The ROW_FORMAT=COMPRESSED page size, or 0. */
+  ulint       m_zip_size;
+
+  /** File handle to the tablespace */
+  pfs_os_file_t     m_file;
+
+  /** Physical file path. */
+  const char*     m_filepath;
+
+  /** Covering transaction. */
+  trx_t*      m_trx;
+
+  /** Space id of the file being iterated over. */
+  uint32_t    m_space;
+
+  /** Current extent descriptor page */
+  xdes_t*       m_xdes;
+
+  /** Physical page offset in the file of the extent descriptor */
+  uint32_t    m_xdes_page_no;
+
+  /** Flags value read from the header page */
+  uint32_t    m_space_flags;
 };
 
 /**
@@ -239,45 +239,45 @@ Try and determine the index root pages by checking if the next/prev
 pointers are both FIL_NULL. We need to ensure that skip deleted pages. */
 struct FetchIndexRootPages : public AbstractCallback {
 
-	/** Index information gathered from the .ibd file. */
-	struct Index {
+  /** Index information gathered from the .ibd file. */
+  struct Index {
 
-		Index(index_id_t id, uint32_t page_no)
-			:
-			m_id(id),
-			m_page_no(page_no) { }
+    Index(index_id_t id, uint32_t page_no)
+      :
+      m_id(id),
+      m_page_no(page_no) { }
 
-		index_id_t	m_id;		/*!< Index id */
-		uint32_t	m_page_no;	/*!< Root page number */
-	};
+    index_id_t  m_id;     /*!< Index id */
+    uint32_t  m_page_no;  /*!< Root page number */
+  };
 
-	/** Constructor
-	@param trx covering (user) transaction
-	@param table table definition in server .*/
-	FetchIndexRootPages(const dict_table_t* table, trx_t* trx)
-		:
-		AbstractCallback(trx, UINT32_MAX),
-		creating_table(false), m_table(table), m_table_name(nullptr), m_index(0, 0) UNIV_NOTHROW { }
+  /** Constructor
+  @param trx covering (user) transaction
+  @param table table definition in server .*/
+  FetchIndexRootPages(const dict_table_t* table, trx_t* trx)
+    :
+    AbstractCallback(trx, UINT32_MAX),
+    creating_table(false), m_table(table), m_table_name(nullptr), m_index(0, 0) UNIV_NOTHROW { }
 
-	FetchIndexRootPages(const char* table_name)
-		:
-		AbstractCallback(nullptr, UINT32_MAX),
-		creating_table(true), m_table(nullptr), m_table_name(table_name), m_index(0, 0) UNIV_NOTHROW { }
+  FetchIndexRootPages(const char* table_name)
+    :
+    AbstractCallback(nullptr, UINT32_MAX),
+    creating_table(true), m_table(nullptr), m_table_name(table_name), m_index(0, 0) UNIV_NOTHROW { }
   
-	/** Destructor */
-	~FetchIndexRootPages() UNIV_NOTHROW override = default;
+  /** Destructor */
+  ~FetchIndexRootPages() UNIV_NOTHROW override = default;
 
-	/** Fetch the clustered index root page in the tablespace
-	@param iter	Tablespace iterator
-	@param block	Block to use for IO
-	@retval DB_SUCCESS or error code */
-	dberr_t run(const fil_iterator_t& iter,
-		    buf_block_t* block) UNIV_NOTHROW override;
+  /** Fetch the clustered index root page in the tablespace
+  @param iter   Tablespace iterator
+  @param block  Block to use for IO
+  @retval DB_SUCCESS or error code */
+  dberr_t run(const fil_iterator_t& iter,
+        buf_block_t* block) UNIV_NOTHROW override;
 
-	/** Check that fsp flags and row formats match.
-	@param block block to convert, it is not from the buffer pool.
-	@retval DB_SUCCESS or error code. */
-	dberr_t operator()(buf_block_t* block) UNIV_NOTHROW override;
+  /** Check that fsp flags and row formats match.
+  @param block block to convert, it is not from the buffer pool.
+  @retval DB_SUCCESS or error code. */
+  dberr_t operator()(buf_block_t* block) UNIV_NOTHROW override;
 
   /** Get row format from the header and the root index page. */
   enum row_type get_row_format(buf_block_t *block)
@@ -304,16 +304,16 @@ struct FetchIndexRootPages : public AbstractCallback {
   }
 
   /** Update the import configuration that will be used to import
-	the tablespace. */
-	dberr_t build_row_import(row_import* cfg) const UNIV_NOTHROW;
+  the tablespace. */
+  dberr_t build_row_import(row_import* cfg) const UNIV_NOTHROW;
 
   /** Whether the (stub) table is being created. When the table is
   being created, there's no table yet so m_table is nullptr, but
   m_table_name should be supplied. */
   const bool creating_table;
   
-	/** Table definition in server. */
-	const dict_table_t*	m_table;
+  /** Table definition in server. */
+  const dict_table_t*   m_table;
 
   /** Table row format. Only used when creating_table, for obtaining
   row format from the .ibd for the stub table. */
@@ -323,8 +323,8 @@ struct FetchIndexRootPages : public AbstractCallback {
   is nullptr, but m_table_name should be supplied. */
   const char* m_table_name;
 
-	/** Index information */
-	Index			m_index;
+  /** Index information */
+  Index       m_index;
 };
 
 /*****************************************************************//**
@@ -334,28 +334,28 @@ of the table in the data dictionary.
 dberr_t
 row_import_for_mysql(
 /*=================*/
-	dict_table_t*	table,		/*!< in/out: table */
-	row_prebuilt_t*	prebuilt)	/*!< in: prebuilt struct
-						in MySQL */
-	MY_ATTRIBUTE((nonnull, warn_unused_result));
+  dict_table_t*   table,    /*!< in/out: table */
+  row_prebuilt_t*   prebuilt)   /*!< in: prebuilt struct
+            in MySQL */
+  MY_ATTRIBUTE((nonnull, warn_unused_result));
 
 /** Update the DICT_TF2_DISCARDED flag in SYS_TABLES.MIX_LEN.
-@param[in,out]	trx		dictionary transaction
-@param[in]	table_id	table identifier
-@param[in]	discarded	whether to set or clear the flag
+@param[in,out]  trx     dictionary transaction
+@param[in]  table_id  table identifier
+@param[in]  discarded   whether to set or clear the flag
 @return DB_SUCCESS or error code */
 dberr_t row_import_update_discarded_flag(trx_t* trx, table_id_t table_id,
-					 bool discarded)
-	MY_ATTRIBUTE((nonnull, warn_unused_result));
+           bool discarded)
+  MY_ATTRIBUTE((nonnull, warn_unused_result));
 
 /** Update the root page numbers and tablespace ID of a table.
-@param[in,out]	trx	dictionary transaction
-@param[in,out]	table	persistent table
-@param[in]	reset	whether to reset the fields to FIL_NULL
+@param[in,out]  trx   dictionary transaction
+@param[in,out]  table   persistent table
+@param[in]  reset   whether to reset the fields to FIL_NULL
 @return DB_SUCCESS or error code */
 dberr_t
 row_import_update_index_root(trx_t* trx, dict_table_t* table, bool reset)
-	MY_ATTRIBUTE((nonnull, warn_unused_result));
+  MY_ATTRIBUTE((nonnull, warn_unused_result));
 
 /********************************************************************//**
 Iterate over all or some pages in the tablespace.
@@ -363,14 +363,14 @@ Iterate over all or some pages in the tablespace.
 @param name - the table name
 @param n_io_buffers - number of blocks to read and write together
 @param callback - functor that will do the page queries or updates
-@return	DB_SUCCESS or error code */
+@return   DB_SUCCESS or error code */
 dberr_t
 fil_tablespace_iterate(
 /*===================*/
   const char* dir_path,
-	const char*	name,
-	ulint			n_io_buffers,
-	AbstractCallback&	callback);
+  const char*   name,
+  ulint       n_io_buffers,
+  AbstractCallback&   callback);
 
 dberr_t get_row_type_from_cfg(const char* dir_path, const char* name, THD* thd, rec_format_enum& result);
 

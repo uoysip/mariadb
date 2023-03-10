@@ -1,95 +1,126 @@
---source include/have_innodb.inc
---source ../../encryption/include/have_file_key_management_plugin.inc
+--source include/innodb_row_format_2.inc
+--source include/innodb_checksum_algorithm_2.inc
+--source include/innodb_copy_cfg.inc
 
 let $MYSQLD_DATADIR = `SELECT @@datadir`;
 
---echo #
---echo # MDEV-26137 ALTER TABLE IMPORT enhancement
---echo #
+if($MTR_COMBINATION_ROW_FORMAT_DEFAULT) {
+  if($MTR_COMBINATION_FULL_CRC32) {
+    if($MTR_COMBINATION_DO_COPY_CFG) {
+      let $RUN_ONCE = 1;
+    }
+  }
+}
 
---echo # enhanced workflow
-CREATE TABLE t1 (a int) ENGINE=InnoDB;
+if($RUN_ONCE) {
+  --echo #
+  --echo # MDEV-26137 ALTER TABLE IMPORT enhancement
+  --echo #
+  
+  --echo # drop t1 before importing t2
+  CREATE TABLE t1 (a int) ENGINE=InnoDB;
+  INSERT INTO t1 VALUES(42);
+  FLUSH TABLES t1 FOR EXPORT;
+  --copy_file $MYSQLD_DATADIR/test/t1.cfg $MYSQLD_DATADIR/test/t2.cfg
+  --copy_file $MYSQLD_DATADIR/test/t1.frm $MYSQLD_DATADIR/test/t2.frm
+  --copy_file $MYSQLD_DATADIR/test/t1.ibd $MYSQLD_DATADIR/test/t2.ibd
+  UNLOCK TABLES;
+  DROP TABLE t1;
+  ALTER TABLE t2 IMPORT TABLESPACE;
+  SHOW CREATE TABLE t2;
+  SELECT * FROM t2;
+  DROP TABLE t2;
+  
+  --echo # created t2 but did not discard tablespace
+  CREATE TABLE t1 (a int) ENGINE=InnoDB;
+  INSERT INTO t1 VALUES(42);
+  CREATE TABLE t2 LIKE t1;
+  FLUSH TABLES t1 FOR EXPORT;
+  --copy_file $MYSQLD_DATADIR/test/t1.cfg $MYSQLD_DATADIR/test/t2.cfg
+  --error 1
+  --copy_file $MYSQLD_DATADIR/test/t1.frm $MYSQLD_DATADIR/test/t2.frm
+  --error 1
+  --copy_file $MYSQLD_DATADIR/test/t1.ibd $MYSQLD_DATADIR/test/t2.ibd
+  UNLOCK TABLES;
+  DROP TABLE t1;
+  call mtr.add_suppression("InnoDB: Unable to import tablespace");
+  --error ER_TABLESPACE_EXISTS
+  ALTER TABLE t2 IMPORT TABLESPACE;
+  SHOW CREATE TABLE t2;
+  SELECT * FROM t2;
+  DROP TABLE t2;
+  
+  --echo # attempt to import when there's no tablespace
+  --error ER_NO_SUCH_TABLE
+  ALTER TABLE t2 IMPORT TABLESPACE;
+  
+  --echo # with index
+  CREATE TABLE t1 (a int, b varchar(50)) ENGINE=InnoDB;
+  CREATE UNIQUE INDEX ai ON t1 (a);
+  INSERT INTO t1 VALUES(42, "hello");
+  FLUSH TABLES t1 FOR EXPORT;
+  --copy_file $MYSQLD_DATADIR/test/t1.cfg $MYSQLD_DATADIR/test/t2.cfg
+  --copy_file $MYSQLD_DATADIR/test/t1.frm $MYSQLD_DATADIR/test/t2.frm
+  --copy_file $MYSQLD_DATADIR/test/t1.ibd $MYSQLD_DATADIR/test/t2.ibd
+  UNLOCK TABLES;
+  ALTER TABLE t2 IMPORT TABLESPACE;
+  SHOW CREATE TABLE t2;
+  SELECT * FROM t2;
+  SHOW INDEX FROM t1;
+  SHOW INDEX FROM t2;
+  DROP TABLE t1, t2;
+  
+  --echo # with virtual column index
+  CREATE TABLE t1 (a int, b int as (a * a)) ENGINE=InnoDB;
+  CREATE UNIQUE INDEX ai ON t1 (b);
+  INSERT INTO t1 VALUES(42, default);
+  FLUSH TABLES t1 FOR EXPORT;
+  --copy_file $MYSQLD_DATADIR/test/t1.cfg $MYSQLD_DATADIR/test/t2.cfg
+  --copy_file $MYSQLD_DATADIR/test/t1.frm $MYSQLD_DATADIR/test/t2.frm
+  --copy_file $MYSQLD_DATADIR/test/t1.ibd $MYSQLD_DATADIR/test/t2.ibd
+  UNLOCK TABLES;
+  ALTER TABLE t2 IMPORT TABLESPACE;
+  SHOW CREATE TABLE t2;
+  SELECT * FROM t2;
+  SELECT b FROM t2 USE INDEX (ai);
+  SHOW INDEX FROM t1;
+  SHOW INDEX FROM t2;
+  CHECK TABLE t2 EXTENDED;
+  DROP TABLE t1, t2;
+}
+
+if($MTR_COMBINATION_ROW_FORMAT_DEFAULT) {
+  let $ROW_FORMAT_OPTION = ;
+}
+if($MTR_COMBINATION_REDUNDANT) {
+  let $ROW_FORMAT_OPTION = ROW_FORMAT=REDUNDANT;
+}
+if($MTR_COMBINATION_COMPACT) {
+  let $ROW_FORMAT_OPTION = ROW_FORMAT=COMPACT;
+}
+if($MTR_COMBINATION_DYNAMIC) {
+  let $ROW_FORMAT_OPTION = ROW_FORMAT=DYNAMIC;
+}
+if($MTR_COMBINATION_COMPRESSED) {
+  let $ROW_FORMAT_OPTION = ROW_FORMAT=COMPRESSED;
+}
+if($MTR_COMBINATION_REDUNDANT_DEFAULT) {
+  let $ROW_FORMAT_OPTION = ;
+  SET GLOBAL innodb_default_row_format='redundant';
+}
+if($MTR_COMBINATION_CRC32) {
+  SET GLOBAL innodb_checksum_algorithm=crc32;
+}
+if($MTR_COMBINATION_FULL_CRC32) {
+  SET GLOBAL innodb_checksum_algorithm=full_crc32;
+}
+
+eval CREATE TABLE t1 (a int) ENGINE=InnoDB $ROW_FORMAT_OPTION;
 INSERT INTO t1 VALUES(42);
 FLUSH TABLES t1 FOR EXPORT;
---copy_file $MYSQLD_DATADIR/test/t1.cfg $MYSQLD_DATADIR/test/t2.cfg
---copy_file $MYSQLD_DATADIR/test/t1.frm $MYSQLD_DATADIR/test/t2.frm
---copy_file $MYSQLD_DATADIR/test/t1.ibd $MYSQLD_DATADIR/test/t2.ibd
-UNLOCK TABLES;
-ALTER TABLE t2 IMPORT TABLESPACE;
-SELECT * FROM t2;
-DROP TABLE t1, t2;
-
---echo # a variant of the previous case, but we drop t1 before importing t2
-CREATE TABLE t1 (a int) ENGINE=InnoDB;
-INSERT INTO t1 VALUES(42);
-FLUSH TABLES t1 FOR EXPORT;
---copy_file $MYSQLD_DATADIR/test/t1.cfg $MYSQLD_DATADIR/test/t2.cfg
---copy_file $MYSQLD_DATADIR/test/t1.frm $MYSQLD_DATADIR/test/t2.frm
---copy_file $MYSQLD_DATADIR/test/t1.ibd $MYSQLD_DATADIR/test/t2.ibd
-UNLOCK TABLES;
-DROP TABLE t1;
-ALTER TABLE t2 IMPORT TABLESPACE;
-SELECT * FROM t2;
-DROP TABLE t2;
-
---echo # created t2 but did not discard tablespace
-CREATE TABLE t1 (a int) ENGINE=InnoDB;
-INSERT INTO t1 VALUES(42);
-CREATE TABLE t2 LIKE t1;
-FLUSH TABLES t1 FOR EXPORT;
---copy_file $MYSQLD_DATADIR/test/t1.cfg $MYSQLD_DATADIR/test/t2.cfg
---error 1
---copy_file $MYSQLD_DATADIR/test/t1.frm $MYSQLD_DATADIR/test/t2.frm
---error 1
---copy_file $MYSQLD_DATADIR/test/t1.ibd $MYSQLD_DATADIR/test/t2.ibd
-UNLOCK TABLES;
-DROP TABLE t1;
-call mtr.add_suppression("InnoDB: Unable to import tablespace");
---error ER_TABLESPACE_EXISTS
-ALTER TABLE t2 IMPORT TABLESPACE;
-SELECT * FROM t2;
-DROP TABLE t2;
-
---echo # attempt to import when there's no tablespace
---error ER_NO_SUCH_TABLE
-ALTER TABLE t2 IMPORT TABLESPACE;
-
---echo # with index
-CREATE TABLE t1 (a int, b varchar(50)) ENGINE=InnoDB;
-CREATE UNIQUE INDEX ai ON t1 (a);
-INSERT INTO t1 VALUES(42, "hello");
-FLUSH TABLES t1 FOR EXPORT;
---copy_file $MYSQLD_DATADIR/test/t1.cfg $MYSQLD_DATADIR/test/t2.cfg
---copy_file $MYSQLD_DATADIR/test/t1.frm $MYSQLD_DATADIR/test/t2.frm
---copy_file $MYSQLD_DATADIR/test/t1.ibd $MYSQLD_DATADIR/test/t2.ibd
-UNLOCK TABLES;
-ALTER TABLE t2 IMPORT TABLESPACE;
-SELECT * FROM t2;
-SHOW INDEX FROM t1;
-SHOW INDEX FROM t2;
-DROP TABLE t1, t2;
-
---echo # with virtual column index
-CREATE TABLE t1 (a int, b int as (a * a)) ENGINE=InnoDB;
-CREATE UNIQUE INDEX ai ON t1 (b);
-INSERT INTO t1 VALUES(42, default);
-FLUSH TABLES t1 FOR EXPORT;
---copy_file $MYSQLD_DATADIR/test/t1.cfg $MYSQLD_DATADIR/test/t2.cfg
---copy_file $MYSQLD_DATADIR/test/t1.frm $MYSQLD_DATADIR/test/t2.frm
---copy_file $MYSQLD_DATADIR/test/t1.ibd $MYSQLD_DATADIR/test/t2.ibd
-UNLOCK TABLES;
-ALTER TABLE t2 IMPORT TABLESPACE;
-SELECT * FROM t2;
-SHOW INDEX FROM t1;
-SHOW INDEX FROM t2;
-DROP TABLE t1, t2;
-
-
---echo # with encryption and page_compressed, with or without .cfg
-CREATE TABLE t1 (a int, b varchar(50)) ENGINE=InnoDB ENCRYPTED=YES ENCRYPTION_KEY_ID=6 PAGE_COMPRESSED=1;
-INSERT INTO t1 VALUES(42, "hello");
-FLUSH TABLES t1 FOR EXPORT;
---copy_file $MYSQLD_DATADIR/test/t1.cfg $MYSQLD_DATADIR/test/t2.cfg
+if($MTR_COMBINATION_DO_COPY_CFG) {
+  --copy_file $MYSQLD_DATADIR/test/t1.cfg $MYSQLD_DATADIR/test/t2.cfg
+}
 --copy_file $MYSQLD_DATADIR/test/t1.frm $MYSQLD_DATADIR/test/t2.frm
 --copy_file $MYSQLD_DATADIR/test/t1.ibd $MYSQLD_DATADIR/test/t2.ibd
 UNLOCK TABLES;
@@ -98,264 +129,9 @@ SHOW CREATE TABLE t2;
 SELECT * FROM t2;
 DROP TABLE t1, t2;
 
-CREATE TABLE t1 (a int, b varchar(50)) ENGINE=InnoDB ENCRYPTED=YES ENCRYPTION_KEY_ID=6 PAGE_COMPRESSED=1;
-INSERT INTO t1 VALUES(42, "hello");
-FLUSH TABLES t1 FOR EXPORT;
---copy_file $MYSQLD_DATADIR/test/t1.frm $MYSQLD_DATADIR/test/t2.frm
---copy_file $MYSQLD_DATADIR/test/t1.ibd $MYSQLD_DATADIR/test/t2.ibd
-UNLOCK TABLES;
-ALTER TABLE t2 IMPORT TABLESPACE;
-SHOW CREATE TABLE t2;
-SELECT * FROM t2;
-DROP TABLE t1, t2;
-
---echo # default row formats, with or without .cfg
-SET GLOBAL innodb_default_row_format='redundant';
-CREATE TABLE t1 (a int, b varchar(50)) ENGINE=InnoDB ROW_FORMAT=COMPACT;
-INSERT INTO t1 VALUES(42, "hello");
-FLUSH TABLES t1 FOR EXPORT;
---copy_file $MYSQLD_DATADIR/test/t1.cfg $MYSQLD_DATADIR/test/t2.cfg
---copy_file $MYSQLD_DATADIR/test/t1.frm $MYSQLD_DATADIR/test/t2.frm
---copy_file $MYSQLD_DATADIR/test/t1.ibd $MYSQLD_DATADIR/test/t2.ibd
-UNLOCK TABLES;
-ALTER TABLE t2 IMPORT TABLESPACE;
-SHOW CREATE TABLE t2;
-SELECT * FROM t2;
-DROP TABLE t1, t2;
-
-CREATE TABLE t1 (a int, b varchar(50)) ENGINE=InnoDB ROW_FORMAT=COMPACT;
-INSERT INTO t1 VALUES(42, "hello");
-FLUSH TABLES t1 FOR EXPORT;
---copy_file $MYSQLD_DATADIR/test/t1.frm $MYSQLD_DATADIR/test/t2.frm
---copy_file $MYSQLD_DATADIR/test/t1.ibd $MYSQLD_DATADIR/test/t2.ibd
-UNLOCK TABLES;
-ALTER TABLE t2 IMPORT TABLESPACE;
-SHOW CREATE TABLE t2;
-SELECT * FROM t2;
-DROP TABLE t1, t2;
-
-SET GLOBAL innodb_default_row_format=default;
-
---echo # various row formats
---echo ## with .cfg, full_crc32
-CREATE TABLE t1 (a int, b varchar(50)) ENGINE=InnoDB ROW_FORMAT=COMPACT;
-INSERT INTO t1 VALUES(42, "hello");
-FLUSH TABLES t1 FOR EXPORT;
---copy_file $MYSQLD_DATADIR/test/t1.cfg $MYSQLD_DATADIR/test/t2.cfg
---copy_file $MYSQLD_DATADIR/test/t1.frm $MYSQLD_DATADIR/test/t2.frm
---copy_file $MYSQLD_DATADIR/test/t1.ibd $MYSQLD_DATADIR/test/t2.ibd
-UNLOCK TABLES;
-ALTER TABLE t2 IMPORT TABLESPACE;
-SHOW CREATE TABLE t2;
-SELECT * FROM t2;
-DROP TABLE t1, t2;
-
-CREATE TABLE t1 (a int, b varchar(50)) ENGINE=InnoDB ROW_FORMAT=REDUNDANT;
-INSERT INTO t1 VALUES(42, "hello");
-FLUSH TABLES t1 FOR EXPORT;
---copy_file $MYSQLD_DATADIR/test/t1.cfg $MYSQLD_DATADIR/test/t2.cfg
---copy_file $MYSQLD_DATADIR/test/t1.frm $MYSQLD_DATADIR/test/t2.frm
---copy_file $MYSQLD_DATADIR/test/t1.ibd $MYSQLD_DATADIR/test/t2.ibd
-UNLOCK TABLES;
-ALTER TABLE t2 IMPORT TABLESPACE;
-SHOW CREATE TABLE t2;
-SELECT * FROM t2;
-DROP TABLE t1, t2;
-
-CREATE TABLE t1 (a int, b varchar(50)) ENGINE=InnoDB ROW_FORMAT=COMPRESSED;
-INSERT INTO t1 VALUES(42, "hello");
-FLUSH TABLES t1 FOR EXPORT;
---copy_file $MYSQLD_DATADIR/test/t1.cfg $MYSQLD_DATADIR/test/t2.cfg
---copy_file $MYSQLD_DATADIR/test/t1.frm $MYSQLD_DATADIR/test/t2.frm
---copy_file $MYSQLD_DATADIR/test/t1.ibd $MYSQLD_DATADIR/test/t2.ibd
-UNLOCK TABLES;
-ALTER TABLE t2 IMPORT TABLESPACE;
-SHOW CREATE TABLE t2;
-SELECT * FROM t2;
-DROP TABLE t1, t2;
-
-CREATE TABLE t1 (a int, b varchar(50)) ENGINE=InnoDB ROW_FORMAT=DYNAMIC;
-INSERT INTO t1 VALUES(42, "hello");
-FLUSH TABLES t1 FOR EXPORT;
---copy_file $MYSQLD_DATADIR/test/t1.cfg $MYSQLD_DATADIR/test/t2.cfg
---copy_file $MYSQLD_DATADIR/test/t1.frm $MYSQLD_DATADIR/test/t2.frm
---copy_file $MYSQLD_DATADIR/test/t1.ibd $MYSQLD_DATADIR/test/t2.ibd
-UNLOCK TABLES;
-ALTER TABLE t2 IMPORT TABLESPACE;
-SHOW CREATE TABLE t2;
-SELECT * FROM t2;
-DROP TABLE t1, t2;
-
---echo ## without .cfg, full_crc32
-CREATE TABLE t1 (a int, b varchar(50)) ENGINE=InnoDB;
-INSERT INTO t1 VALUES(42, "hello");
-FLUSH TABLES t1 FOR EXPORT;
---copy_file $MYSQLD_DATADIR/test/t1.frm $MYSQLD_DATADIR/test/t2.frm
---copy_file $MYSQLD_DATADIR/test/t1.ibd $MYSQLD_DATADIR/test/t2.ibd
-UNLOCK TABLES;
-ALTER TABLE t2 IMPORT TABLESPACE;
-SELECT * FROM t2;
-DROP TABLE t1, t2;
-
-CREATE TABLE t1 (a int, b varchar(50)) ENGINE=InnoDB ROW_FORMAT=COMPACT;
-INSERT INTO t1 VALUES(42, "hello");
-FLUSH TABLES t1 FOR EXPORT;
---copy_file $MYSQLD_DATADIR/test/t1.frm $MYSQLD_DATADIR/test/t2.frm
---copy_file $MYSQLD_DATADIR/test/t1.ibd $MYSQLD_DATADIR/test/t2.ibd
-UNLOCK TABLES;
-ALTER TABLE t2 IMPORT TABLESPACE;
-SHOW CREATE TABLE t2;
-SELECT * FROM t2;
-DROP TABLE t1, t2;
-
-CREATE TABLE t1 (a int, b varchar(50)) ENGINE=InnoDB ROW_FORMAT=REDUNDANT;
-INSERT INTO t1 VALUES(42, "hello");
-FLUSH TABLES t1 FOR EXPORT;
---copy_file $MYSQLD_DATADIR/test/t1.frm $MYSQLD_DATADIR/test/t2.frm
---copy_file $MYSQLD_DATADIR/test/t1.ibd $MYSQLD_DATADIR/test/t2.ibd
-UNLOCK TABLES;
-ALTER TABLE t2 IMPORT TABLESPACE;
-SHOW CREATE TABLE t2;
-SELECT * FROM t2;
-DROP TABLE t1, t2;
-
-CREATE TABLE t1 (a int, b varchar(50)) ENGINE=InnoDB ROW_FORMAT=COMPRESSED;
-INSERT INTO t1 VALUES(42, "hello");
-FLUSH TABLES t1 FOR EXPORT;
---copy_file $MYSQLD_DATADIR/test/t1.frm $MYSQLD_DATADIR/test/t2.frm
---copy_file $MYSQLD_DATADIR/test/t1.ibd $MYSQLD_DATADIR/test/t2.ibd
-UNLOCK TABLES;
-ALTER TABLE t2 IMPORT TABLESPACE;
-SHOW CREATE TABLE t2;
-SELECT * FROM t2;
-DROP TABLE t1, t2;
-
-CREATE TABLE t1 (a int, b varchar(50)) ENGINE=InnoDB ROW_FORMAT=DYNAMIC;
-INSERT INTO t1 VALUES(42, "hello");
-FLUSH TABLES t1 FOR EXPORT;
---copy_file $MYSQLD_DATADIR/test/t1.frm $MYSQLD_DATADIR/test/t2.frm
---copy_file $MYSQLD_DATADIR/test/t1.ibd $MYSQLD_DATADIR/test/t2.ibd
-UNLOCK TABLES;
-ALTER TABLE t2 IMPORT TABLESPACE;
-SHOW CREATE TABLE t2;
-SELECT * FROM t2;
-DROP TABLE t1, t2;
-
---echo ## with .cfg, non-full_crc32
-SET GLOBAL innodb_checksum_algorithm=crc32;
-
-CREATE TABLE t1 (a int, b varchar(50)) ENGINE=InnoDB;
-INSERT INTO t1 VALUES(42, "hello");
-FLUSH TABLES t1 FOR EXPORT;
---copy_file $MYSQLD_DATADIR/test/t1.cfg $MYSQLD_DATADIR/test/t2.cfg
---copy_file $MYSQLD_DATADIR/test/t1.frm $MYSQLD_DATADIR/test/t2.frm
---copy_file $MYSQLD_DATADIR/test/t1.ibd $MYSQLD_DATADIR/test/t2.ibd
-UNLOCK TABLES;
-ALTER TABLE t2 IMPORT TABLESPACE;
-SELECT * FROM t2;
-DROP TABLE t1, t2;
-
-CREATE TABLE t1 (a int, b varchar(50)) ENGINE=InnoDB ROW_FORMAT=COMPACT;
-INSERT INTO t1 VALUES(42, "hello");
-FLUSH TABLES t1 FOR EXPORT;
---copy_file $MYSQLD_DATADIR/test/t1.cfg $MYSQLD_DATADIR/test/t2.cfg
---copy_file $MYSQLD_DATADIR/test/t1.frm $MYSQLD_DATADIR/test/t2.frm
---copy_file $MYSQLD_DATADIR/test/t1.ibd $MYSQLD_DATADIR/test/t2.ibd
-UNLOCK TABLES;
-ALTER TABLE t2 IMPORT TABLESPACE;
-SHOW CREATE TABLE t2;
-SELECT * FROM t2;
-DROP TABLE t1, t2;
-
-CREATE TABLE t1 (a int, b varchar(50)) ENGINE=InnoDB ROW_FORMAT=REDUNDANT;
-INSERT INTO t1 VALUES(42, "hello");
-FLUSH TABLES t1 FOR EXPORT;
---copy_file $MYSQLD_DATADIR/test/t1.cfg $MYSQLD_DATADIR/test/t2.cfg
---copy_file $MYSQLD_DATADIR/test/t1.frm $MYSQLD_DATADIR/test/t2.frm
---copy_file $MYSQLD_DATADIR/test/t1.ibd $MYSQLD_DATADIR/test/t2.ibd
-UNLOCK TABLES;
-ALTER TABLE t2 IMPORT TABLESPACE;
-SHOW CREATE TABLE t2;
-SELECT * FROM t2;
-DROP TABLE t1, t2;
-
-CREATE TABLE t1 (a int, b varchar(50)) ENGINE=InnoDB ROW_FORMAT=COMPRESSED;
-INSERT INTO t1 VALUES(42, "hello");
-FLUSH TABLES t1 FOR EXPORT;
---copy_file $MYSQLD_DATADIR/test/t1.cfg $MYSQLD_DATADIR/test/t2.cfg
---copy_file $MYSQLD_DATADIR/test/t1.frm $MYSQLD_DATADIR/test/t2.frm
---copy_file $MYSQLD_DATADIR/test/t1.ibd $MYSQLD_DATADIR/test/t2.ibd
-UNLOCK TABLES;
-ALTER TABLE t2 IMPORT TABLESPACE;
-SHOW CREATE TABLE t2;
-SELECT * FROM t2;
-DROP TABLE t1, t2;
-
-CREATE TABLE t1 (a int, b varchar(50)) ENGINE=InnoDB ROW_FORMAT=DYNAMIC;
-INSERT INTO t1 VALUES(42, "hello");
-FLUSH TABLES t1 FOR EXPORT;
---copy_file $MYSQLD_DATADIR/test/t1.cfg $MYSQLD_DATADIR/test/t2.cfg
---copy_file $MYSQLD_DATADIR/test/t1.frm $MYSQLD_DATADIR/test/t2.frm
---copy_file $MYSQLD_DATADIR/test/t1.ibd $MYSQLD_DATADIR/test/t2.ibd
-UNLOCK TABLES;
-ALTER TABLE t2 IMPORT TABLESPACE;
-SHOW CREATE TABLE t2;
-SELECT * FROM t2;
-DROP TABLE t1, t2;
-
---echo ## without .cfg, non-full_crc32
-CREATE TABLE t1 (a int, b varchar(50)) ENGINE=InnoDB;
-INSERT INTO t1 VALUES(42, "hello");
-FLUSH TABLES t1 FOR EXPORT;
---copy_file $MYSQLD_DATADIR/test/t1.frm $MYSQLD_DATADIR/test/t2.frm
---copy_file $MYSQLD_DATADIR/test/t1.ibd $MYSQLD_DATADIR/test/t2.ibd
-UNLOCK TABLES;
-ALTER TABLE t2 IMPORT TABLESPACE;
-SELECT * FROM t2;
-DROP TABLE t1, t2;
-
-CREATE TABLE t1 (a int, b varchar(50)) ENGINE=InnoDB ROW_FORMAT=COMPACT;
-INSERT INTO t1 VALUES(42, "hello");
-FLUSH TABLES t1 FOR EXPORT;
---copy_file $MYSQLD_DATADIR/test/t1.frm $MYSQLD_DATADIR/test/t2.frm
---copy_file $MYSQLD_DATADIR/test/t1.ibd $MYSQLD_DATADIR/test/t2.ibd
-UNLOCK TABLES;
-ALTER TABLE t2 IMPORT TABLESPACE;
-SHOW CREATE TABLE t2;
-SELECT * FROM t2;
-DROP TABLE t1, t2;
-
-CREATE TABLE t1 (a int, b varchar(50)) ENGINE=InnoDB ROW_FORMAT=REDUNDANT;
-INSERT INTO t1 VALUES(42, "hello");
-FLUSH TABLES t1 FOR EXPORT;
---copy_file $MYSQLD_DATADIR/test/t1.frm $MYSQLD_DATADIR/test/t2.frm
---copy_file $MYSQLD_DATADIR/test/t1.ibd $MYSQLD_DATADIR/test/t2.ibd
-UNLOCK TABLES;
-ALTER TABLE t2 IMPORT TABLESPACE;
-SHOW CREATE TABLE t2;
-SELECT * FROM t2;
-DROP TABLE t1, t2;
-
-CREATE TABLE t1 (a int, b varchar(50)) ENGINE=InnoDB ROW_FORMAT=COMPRESSED;
-INSERT INTO t1 VALUES(42, "hello");
-FLUSH TABLES t1 FOR EXPORT;
---copy_file $MYSQLD_DATADIR/test/t1.frm $MYSQLD_DATADIR/test/t2.frm
---copy_file $MYSQLD_DATADIR/test/t1.ibd $MYSQLD_DATADIR/test/t2.ibd
-UNLOCK TABLES;
-ALTER TABLE t2 IMPORT TABLESPACE;
-SHOW CREATE TABLE t2;
-SELECT * FROM t2;
-DROP TABLE t1, t2;
-
-CREATE TABLE t1 (a int, b varchar(50)) ENGINE=InnoDB ROW_FORMAT=DYNAMIC;
-INSERT INTO t1 VALUES(42, "hello");
-FLUSH TABLES t1 FOR EXPORT;
---copy_file $MYSQLD_DATADIR/test/t1.frm $MYSQLD_DATADIR/test/t2.frm
---copy_file $MYSQLD_DATADIR/test/t1.ibd $MYSQLD_DATADIR/test/t2.ibd
-UNLOCK TABLES;
-ALTER TABLE t2 IMPORT TABLESPACE;
-SHOW CREATE TABLE t2;
-SELECT * FROM t2;
-DROP TABLE t1, t2;
-
-SET GLOBAL innodb_checksum_algorithm=default;
+if($MTR_COMBINATION_CRC32) {
+  SET GLOBAL innodb_checksum_algorithm=default;
+}
+if($MTR_COMBINATION_REDUNDANT_DEFAULT) {
+  SET GLOBAL innodb_default_row_format=default;
+}

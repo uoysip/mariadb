@@ -5861,7 +5861,7 @@ ha_innobase::open(const char* name, int, uint)
 	char*	is_part = is_partition(norm_name);
 	THD*	thd = ha_thd();
 	dict_table_t* ib_table = open_dict_table(name, norm_name, is_part,
-                                           DICT_ERR_IGNORE_FK_NOKEY);
+						 DICT_ERR_IGNORE_FK_NOKEY);
 
 	DEBUG_SYNC(thd, "ib_open_after_dict_open");
 
@@ -5869,17 +5869,17 @@ ha_innobase::open(const char* name, int, uint)
 	"stub" table similar to the effects of CREATE TABLE followed by ALTER
 	TABLE ... DISCARD TABLESPACE. */
 	if (!ib_table && thd_ddl_options(thd)->import_tablespace())
-  {
-    int err;
-    if ((err= create_stub_for_import(name)))
-      DBUG_RETURN(err);
+        {
+                int err;
+                if ((err= create_stub_for_import(name)))
+                        DBUG_RETURN(err);
 		DBUG_EXECUTE_IF("die_after_create_stub_for_import", ut_ad(0););
-    ib_table = open_dict_table(name, norm_name, is_part,
-                               DICT_ERR_IGNORE_FK_NOKEY);
-    DEBUG_SYNC(thd, "ib_open_after_create_stub_for_import");
-  }
+                ib_table = open_dict_table(name, norm_name, is_part,
+                                           DICT_ERR_IGNORE_FK_NOKEY);
+                DEBUG_SYNC(thd, "ib_open_after_create_stub_for_import");
+        }
 
-  if (NULL == ib_table) {
+        if (NULL == ib_table) {
 		if (is_part) {
 			sql_print_error("Failed to open table %s.\n",
 					norm_name);
@@ -13229,18 +13229,18 @@ int ha_innobase::create(const char *name, TABLE *form,
 int ha_innobase::create_stub_for_import(const char *name)
 {
   DBUG_ENTER("ha_innobase::create_stub_for_import");
-	char			norm_name[FN_REFLEN];
-	normalize_table_name(norm_name, name);
-	THD*	thd = ha_thd();
-  HA_CREATE_INFO create_info;
-  create_info.init();
+  char norm_name[FN_REFLEN];
+  normalize_table_name(norm_name, name);
+  THD* thd = ha_thd();
   FetchIndexRootPages fetchIndexRootPages(name);
   if (fil_tablespace_iterate(fil_path_to_mysql_datadir, name, IO_BUFFER_SIZE(srv_page_size), fetchIndexRootPages) != DB_SUCCESS)
-    {
-      sql_print_error("InnoDB: failed to get row format from ibd for %s.\n",
-                      norm_name);
-      DBUG_RETURN(ER_INNODB_IMPORT_ERROR);
-    }
+  {
+    sql_print_error("InnoDB: failed to get row format from ibd for %s.\n",
+                    norm_name);
+    DBUG_RETURN(ER_INNODB_IMPORT_ERROR);
+  }
+  HA_CREATE_INFO create_info;
+  create_info.init();
   // get the row format from ibd
   create_info.row_type = fetchIndexRootPages.m_row_format;
   // if .cfg exists, get the row format from cfg, and compare with
