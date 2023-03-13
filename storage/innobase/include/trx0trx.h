@@ -603,6 +603,10 @@ public:
   Cleared in commit_in_memory() after commit_state(),
   trx_sys_t::deregister_rw(), release_locks(). */
   trx_id_t id;
+  /** The largest encountered transaction identifier for which no
+  transaction was observed to be active. This is a cache to speed up
+  trx_sys_t::find_same_or_older(). */
+  trx_id_t max_inactive_id;
 
 private:
   /** mutex protecting state and some of lock
@@ -1054,6 +1058,7 @@ public:
   {
     ut_ad(state == TRX_STATE_NOT_STARTED);
     ut_ad(!id);
+    ut_ad(!max_inactive_id);
     ut_ad(!mutex_is_owner());
     ut_ad(!has_logged());
     ut_ad(!is_referenced());

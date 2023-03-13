@@ -5157,20 +5157,24 @@ has an implicit lock on the record. The transaction instance must have a
 reference count > 0 so that it can't be committed and freed before this
 function has completed. */
 static
-void
+bool
 lock_rec_convert_impl_to_expl_for_trx(
 /*==================================*/
+	trx_t*			trx,	/*!< in/out: active transaction */
 	const page_id_t		id,	/*!< in: page identifier */
 	const rec_t*		rec,	/*!< in: user record on page */
-	dict_index_t*		index,	/*!< in: index of record */
-	trx_t*			trx,	/*!< in/out: active transaction */
-	ulint			heap_no)/*!< in: rec heap number to lock */
+	dict_index_t*		index)	/*!< in: index of record */
 {
+  if (!trx)
+    return false;
+
   ut_ad(trx->is_referenced());
   ut_ad(page_rec_is_leaf(rec));
   ut_ad(!rec_is_metadata(rec, *index));
 
   DEBUG_SYNC_C("before_lock_rec_convert_impl_to_expl_for_trx");
+  ulint heap_no= page_rec_get_heap_no(rec);
+
   {
     LockGuard g{lock_sys.rec_hash, id};
     trx->mutex_lock();
@@ -5187,6 +5191,7 @@ lock_rec_convert_impl_to_expl_for_trx(
   trx->release_reference();
 
   DEBUG_SYNC_C("after_lock_rec_convert_impl_to_expl_for_trx");
+  return false;
 }
 
 
@@ -5260,7 +5265,6 @@ static void lock_rec_other_trx_holds_expl(trx_t *caller_trx, trx_t *trx,
 }
 #endif /* UNIV_DEBUG */
 
-
 /** If an implicit x-lock exists on a record, convert it to an explicit one.
 
 Often, this is called by a transaction that is about to enter a lock wait
@@ -5272,12 +5276,14 @@ This may also be called by the same transaction that is already holding
 an implicit exclusive lock on the record. In this case, no explicit lock
 should be created.
 
+@tparam		is_primary	whether the index is the primary key
 @param[in,out]	caller_trx	current transaction
 @param[in]	id		index tree leaf page identifier
 @param[in]	rec		record on the leaf page
 @param[in]	index		the index of the record
 @param[in]	offsets		rec_get_offsets(rec,index)
 @return	whether caller_trx already holds an exclusive lock on rec */
+template<bool is_primary>
 static
 bool
 lock_rec_convert_impl_to_expl(
@@ -5295,8 +5301,9 @@ lock_rec_convert_impl_to_expl(
 	ut_ad(!page_rec_is_comp(rec) == !rec_offs_comp(offsets));
 	ut_ad(page_rec_is_leaf(rec));
 	ut_ad(!rec_is_metadata(rec, *index));
+	ut_ad(index->is_primary() == is_primary);
 
-	if (dict_index_is_clust(index)) {
+	if (is_primary) {
 		trx_id_t	trx_id;
 
 		trx_id = lock_clust_rec_some_has_impl(rec, index, offsets);
@@ -5322,20 +5329,7 @@ lock_rec_convert_impl_to_expl(
 		ut_d(lock_rec_other_trx_holds_expl(caller_trx, trx, rec, id));
 	}
 
-	if (trx) {
-		ulint	heap_no = page_rec_get_heap_no(rec);
-
-		ut_ad(trx->is_referenced());
-
-		/* If the transaction is still active and has no
-		explicit x-lock set on the record, set one for it.
-		trx cannot be committed until the ref count is zero. */
-
-		lock_rec_convert_impl_to_expl_for_trx(
-			id, rec, index, trx, heap_no);
-	}
-
-	return false;
+	return lock_rec_convert_impl_to_expl_for_trx(trx, id, rec, index);
 }
 
 /*********************************************************************//**
@@ -5374,8 +5368,9 @@ lock_clust_rec_modify_check_and_lock(
 	/* If a transaction has no explicit x-lock set on the record, set one
 	for it */
 
-	if (lock_rec_convert_impl_to_expl(thr_get_trx(thr), block->page.id(),
-					  rec, index, offsets)) {
+	if (lock_rec_convert_impl_to_expl<true>(thr_get_trx(thr),
+						block->page.id(),
+						rec, index, offsets)) {
 		/* We already hold an implicit exclusive lock. */
 		return DB_SUCCESS;
 	}
@@ -5532,15 +5527,19 @@ lock_sec_rec_read_check_and_lock(
 		return(DB_SUCCESS);
 	}
 
-	const page_id_t id{block->page.id()};
-
 	ut_ad(!rec_is_metadata(rec, *index));
 
 	trx_t *trx = thr_get_trx(thr);
+
+	if (lock_table_has(trx, index->table, mode)) {
+		return DB_SUCCESS;
+	}
+
 	if (!page_rec_is_supremum(rec)
-	    && !lock_table_has(trx, index->table, LOCK_X)
-	    && lock_rec_convert_impl_to_expl(thr_get_trx(thr), id, rec,
-					     index, offsets)
+	    && trx_sys.find_same_or_older(
+		       trx, page_get_max_trx_id(block->page.frame))
+	    && lock_rec_convert_impl_to_expl<false>(
+		       trx, block->page.id(), rec, index, offsets)
 	    && gap_mode == LOCK_REC_NOT_GAP) {
 		/* We already hold an implicit exclusive lock. */
 		return DB_SUCCESS;
@@ -5565,7 +5564,8 @@ lock_sec_rec_read_check_and_lock(
 	if (trx->wsrep == 3) trx->wsrep = 1;
 #endif /* WITH_WSREP */
 
-	ut_ad(lock_rec_queue_validate(false, id, rec, index, offsets));
+	ut_ad(lock_rec_queue_validate(false, block->page.id(),
+				      rec, index, offsets));
 
 	return(err);
 }
@@ -5622,7 +5622,8 @@ lock_clust_rec_read_check_and_lock(
 	trx_t *trx = thr_get_trx(thr);
 	if (!lock_table_has(trx, index->table, LOCK_X)
 	    && heap_no != PAGE_HEAP_NO_SUPREMUM
-	    && lock_rec_convert_impl_to_expl(trx, id, rec, index, offsets)
+	    && lock_rec_convert_impl_to_expl<true>(trx, id,
+						   rec, index, offsets)
 	    && gap_mode == LOCK_REC_NOT_GAP) {
 		/* We already hold an implicit exclusive lock. */
 		return DB_SUCCESS;

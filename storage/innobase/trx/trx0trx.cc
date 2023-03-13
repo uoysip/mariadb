@@ -404,6 +404,7 @@ void trx_t::free()
                sizeof skip_lock_inheritance_and_n_ref);
   /* do not poison mutex */
   MEM_NOACCESS(&id, sizeof id);
+  MEM_NOACCESS(&max_inactive_id, sizeof id);
   MEM_NOACCESS(&state, sizeof state);
   MEM_NOACCESS(&is_recovered, sizeof is_recovered);
 #ifdef WITH_WSREP
@@ -503,6 +504,7 @@ inline void trx_t::release_locks()
   lock.table_locks.clear();
   reset_skip_lock_inheritance();
   id= 0;
+  max_inactive_id= 0;
   while (dict_table_t *table= UT_LIST_GET_FIRST(lock.evicted_tables))
   {
     UT_LIST_REMOVE(lock.evicted_tables, table);
