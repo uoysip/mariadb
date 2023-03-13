@@ -1646,9 +1646,10 @@ done:
   buf_pool.flush_hp.set(nullptr);
   mysql_mutex_unlock(&buf_pool.flush_list_mutex);
 
-  buf_pool.try_LRU_scan= true;
   buf_pool.stat.n_pages_written+= n_flush;
 
+  buf_pool.try_LRU_scan= true;
+  pthread_cond_broadcast(&buf_pool.done_free);
   mysql_mutex_unlock(&buf_pool.mutex);
 
   if (n_flushed)
