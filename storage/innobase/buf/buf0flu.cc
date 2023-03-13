@@ -150,7 +150,7 @@ void buf_pool_t::page_cleaner_wakeup()
       (pct_lwm != 0.0 && last_activity_count == srv_get_activity_count()) ||
       srv_max_buf_pool_modified_pct <= dirty_pct)
   {
-    page_cleaner_is_idle= false;
+    page_cleaner_status-= PAGE_CLEANER_IDLE;
     pthread_cond_signal(&do_flush_list);
   }
 }
@@ -332,6 +332,17 @@ inline void buf_page_t::write_complete(bool temporary)
   lock.u_unlock(true);
 }
 
+bool buf_pool_t::n_flush_dec()
+{
+  mysql_mutex_lock(&flush_list_mutex);
+  ut_ad(page_cleaner_status >= LRU_FLUSH);
+  const bool last= (page_cleaner_status-= LRU_FLUSH) < LRU_FLUSH;
+  if (last)
+    pthread_cond_broadcast(&done_flush_LRU);
+  mysql_mutex_unlock(&flush_list_mutex);
+  return last;
+}
+
 /** Complete write of a file page from buf_pool.
 @param request write request */
 void buf_page_write_complete(const IORequest &request)
@@ -374,11 +385,7 @@ void buf_page_write_complete(const IORequest &request)
     pthread_cond_broadcast(&buf_pool.done_free);
     mysql_mutex_unlock(&buf_pool.mutex);
 
-    mysql_mutex_lock(&buf_pool.flush_list_mutex);
-    ut_ad(buf_pool.n_flush >= 2);
-    if ((buf_pool.n_flush-= 2) < 2)
-      pthread_cond_broadcast(&buf_pool.done_flush_LRU);
-    mysql_mutex_unlock(&buf_pool.flush_list_mutex);
+    buf_pool.n_flush_dec();
   }
   else
   {
@@ -790,7 +797,7 @@ bool buf_page_t::flush(bool evict, fil_space_t *space)
   {
     type= IORequest::WRITE_LRU;
     mysql_mutex_lock(&buf_pool.flush_list_mutex);
-    buf_pool.n_flush+= 2;
+    buf_pool.n_flush_inc();
     mysql_mutex_unlock(&buf_pool.flush_list_mutex);
   }
 
@@ -1478,14 +1485,14 @@ void buf_flush_wait_LRU_batch_end()
   mysql_mutex_assert_owner(&buf_pool.flush_list_mutex);
   mysql_mutex_assert_not_owner(&buf_pool.mutex);
 
-  if (buf_pool.n_flush > 1)
+  if (buf_pool.n_flush())
   {
     tpool::tpool_wait_begin();
     thd_wait_begin(nullptr, THD_WAIT_DISKIO);
     do
       my_cond_wait(&buf_pool.done_flush_LRU,
                    &buf_pool.flush_list_mutex.m_mutex);
-    while (buf_pool.n_flush > 1);
+    while (buf_pool.n_flush());
     tpool::tpool_wait_end();
     thd_wait_end(nullptr);
   }
@@ -1505,7 +1512,7 @@ static ulint buf_flush_list_holding_mutex(ulint max_n= ULINT_UNDEFINED,
   mysql_mutex_assert_owner(&buf_pool.mutex);
 
   mysql_mutex_lock(&buf_pool.flush_list_mutex);
-  if (buf_pool.n_flush & 1)
+  if (buf_pool.flush_list_active())
   {
 nothing_to_do:
     mysql_mutex_unlock(&buf_pool.flush_list_mutex);
@@ -1516,12 +1523,11 @@ nothing_to_do:
     pthread_cond_broadcast(&buf_pool.done_flush_list);
     goto nothing_to_do;
   }
-  buf_pool.n_flush++;
+  buf_pool.flush_list_set_active();
   const ulint n_flushed= buf_do_flush_list_batch(max_n, lsn);
   if (n_flushed)
     buf_pool.stat.n_pages_written+= n_flushed;
-  ut_ad(buf_pool.n_flush & 1);
-  buf_pool.n_flush--;
+  buf_pool.flush_list_set_inactive();
   pthread_cond_broadcast(&buf_pool.done_flush_list);
   mysql_mutex_unlock(&buf_pool.flush_list_mutex);
 
@@ -1681,33 +1687,26 @@ ulint buf_flush_LRU(ulint max_n, bool evict)
   if (evict)
   {
     mysql_mutex_lock(&buf_pool.flush_list_mutex);
-    const auto n= buf_pool.n_flush;
-    if (n <= 1)
-      buf_pool.n_flush= n + 2;
+    const auto n= buf_pool.n_flush();
+    if (!n)
+      buf_pool.n_flush_inc();
     mysql_mutex_unlock(&buf_pool.flush_list_mutex);
-    if (n > 1)
+    if (n)
       return 0;
   }
 
   flush_counters_t n;
   buf_do_LRU_batch(max_n, evict, &n);
 
-  if (n.evicted)
+  const ulint pages= evict ? n.evicted + n.flushed : n.flushed;
+
+  if (evict ? buf_pool.n_flush_dec() : n.evicted)
   {
     buf_pool.try_LRU_scan= true;
     pthread_cond_broadcast(&buf_pool.done_free);
   }
 
-  if (!evict)
-    return n.flushed;
-
-  mysql_mutex_lock(&buf_pool.flush_list_mutex);
-  ut_ad(buf_pool.n_flush > 1);
-  if ((buf_pool.n_flush-= 2) < 2)
-    pthread_cond_broadcast(&buf_pool.done_flush_LRU);
-  mysql_mutex_unlock(&buf_pool.flush_list_mutex);
-
-  return n.evicted + n.flushed;
+  return pages;
 }
 
 /** Initiate a log checkpoint, discarding the start of the log.
@@ -2218,12 +2217,10 @@ static void buf_flush_page_cleaner()
     else if (srv_shutdown_state > SRV_SHUTDOWN_INITIATED)
       break;
 
-    /* If buf pager cleaner is idle and there is no work
-    (either dirty pages are all flushed or adaptive flushing
-    is not enabled) then opt for non-timed wait */
     if (buf_pool.page_cleaner_idle() &&
         (!UT_LIST_GET_LEN(buf_pool.flush_list) ||
          srv_max_dirty_pages_pct_lwm == 0.0))
+      /* We are idle; wait for buf_pool.page_cleaner_wakeup() */
       my_cond_wait(&buf_pool.do_flush_list,
                    &buf_pool.flush_list_mutex.m_mutex);
     else
@@ -2244,8 +2241,9 @@ static void buf_flush_page_cleaner()
       break;
 
     const lsn_t oldest_lsn= buf_pool.get_oldest_modification(0);
+    const bool LRU_idle= buf_pool.try_LRU_scan;
 
-    if (!oldest_lsn)
+    if (!oldest_lsn && LRU_idle)
     {
       if (UNIV_UNLIKELY(lsn_limit != 0))
       {
@@ -2278,7 +2276,7 @@ static void buf_flush_page_cleaner()
     }
 
     const ulint dirty_blocks= UT_LIST_GET_LEN(buf_pool.flush_list);
-    ut_ad(dirty_blocks);
+    ut_ad(dirty_blocks || !LRU_idle);
     /* We perform dirty reads of the LRU+free list lengths here.
     Division by zero is not possible, because buf_pool.flush_list is
     guaranteed to be nonempty, and it is a subset of buf_pool.LRU. */
@@ -2287,13 +2285,16 @@ static void buf_flush_page_cleaner()
 
     bool idle_flush= false;
 
-    if (lsn_limit || soft_lsn_limit);
+    if (lsn_limit || soft_lsn_limit || !LRU_idle);
     else if (af_needed_for_redo(oldest_lsn));
     else if (srv_max_dirty_pages_pct_lwm != 0.0)
     {
       const ulint activity_count= srv_get_activity_count();
       if (activity_count != last_activity_count)
+      {
         last_activity_count= activity_count;
+        goto maybe_unemployed;
+      }
       else if (buf_pool.page_cleaner_idle() && buf_pool.n_pend_reads == 0)
       {
          /* reaching here means 3 things:
@@ -2304,9 +2305,10 @@ static void buf_flush_page_cleaner()
         idle_flush= true;
         buf_pool.update_last_activity_count(activity_count);
       }
-
-      if (!idle_flush && dirty_pct < srv_max_dirty_pages_pct_lwm)
-        goto unemployed;
+      else
+      maybe_unemployed:
+        if (dirty_pct < srv_max_dirty_pages_pct_lwm)
+          goto unemployed;
     }
     else if (dirty_pct < srv_max_buf_pool_modified_pct)
       goto unemployed;
@@ -2332,6 +2334,11 @@ static void buf_flush_page_cleaner()
     {
       n= srv_max_io_capacity;
       goto background_flush;
+    }
+    else if (!LRU_idle)
+    {
+      n= srv_io_capacity;
+      mysql_mutex_lock(&buf_pool.mutex);
     }
     else if (idle_flush || !srv_adaptive_flushing)
     {
@@ -2365,9 +2372,15 @@ static void buf_flush_page_cleaner()
       goto unemployed;
     }
 
-    n= buf_flush_LRU(n >= n_flushed ? n - n_flushed : 0, false);
+    flush_counters_t c;
+    buf_do_LRU_batch(n >= n_flushed ? n - n_flushed : 0, false, &c);
+
+    if (c.evicted)
+      pthread_cond_broadcast(&buf_pool.done_free);
+
     mysql_mutex_unlock(&buf_pool.mutex);
-    last_pages+= n;
+
+    last_pages+= c.flushed;
 
     if (!idle_flush)
       goto end_of_batch;

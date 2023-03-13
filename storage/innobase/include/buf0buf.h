@@ -1718,26 +1718,65 @@ public:
   /** possibly modified persistent pages (a subset of LRU);
   buf_dblwr.pending_writes() is approximately COUNT(is_write_fixed()) */
   UT_LIST_BASE_NODE_T(buf_page_t) flush_list;
-  /** Number of pending LRU flush * 2 + flush_list_active flag */
-  unsigned n_flush;
 private:
-  /** whether the page cleaner needs wakeup from indefinite sleep */
-  bool page_cleaner_is_idle;
+  static constexpr unsigned PAGE_CLEANER_IDLE= 1;
+  static constexpr unsigned FLUSH_LIST_ACTIVE= 2;
+  static constexpr unsigned LRU_FLUSH= 4;
+
+  /** Number of pending LRU flush * LRU_FLUSH +
+  PAGE_CLEANER_IDLE + FLUSH_LIST_ACTIVE flags */
+  unsigned page_cleaner_status;
   /** track server activity count for signaling idle flushing */
   ulint last_activity_count;
 public:
   /** signalled to wake up the page_cleaner; protected by flush_list_mutex */
   pthread_cond_t do_flush_list;
-  /** broadcast when !(n_flush >> 1); protected by flush_list_mutex */
+  /** broadcast when !n_flush(); protected by flush_list_mutex */
   pthread_cond_t done_flush_LRU;
   /** broadcast when a batch completes; protected by flush_list_mutex */
   pthread_cond_t done_flush_list;
+
+  /** @return number of pending LRU flush */
+  unsigned n_flush() const
+  {
+    mysql_mutex_assert_owner(&flush_list_mutex);
+    return page_cleaner_status / LRU_FLUSH;
+  }
+
+  /** Increment the number of pending LRU flush */
+  void n_flush_inc()
+  {
+    mysql_mutex_assert_owner(&flush_list_mutex);
+    page_cleaner_status+= LRU_FLUSH;
+  }
+
+  /** Decrement the number of pending LRU flush
+  @return whether this was the last pending operation */
+  bool n_flush_dec();
+
+  /** @return whether flush_list flushing is active */
+  bool flush_list_active() const
+  {
+    mysql_mutex_assert_owner(&flush_list_mutex);
+    return page_cleaner_status & FLUSH_LIST_ACTIVE;
+  }
+
+  void flush_list_set_active()
+  {
+    ut_ad(!flush_list_active());
+    page_cleaner_status+= FLUSH_LIST_ACTIVE;
+  }
+  void flush_list_set_inactive()
+  {
+    ut_ad(flush_list_active());
+    page_cleaner_status-= FLUSH_LIST_ACTIVE;
+  }
 
   /** @return whether the page cleaner must sleep due to being idle */
   bool page_cleaner_idle() const
   {
     mysql_mutex_assert_owner(&flush_list_mutex);
-    return page_cleaner_is_idle;
+    return page_cleaner_status & PAGE_CLEANER_IDLE;
   }
   /** Wake up the page cleaner if needed */
   void page_cleaner_wakeup();
@@ -1746,7 +1785,8 @@ public:
   void page_cleaner_set_idle(bool deep_sleep)
   {
     mysql_mutex_assert_owner(&flush_list_mutex);
-    page_cleaner_is_idle= deep_sleep;
+    page_cleaner_status= (page_cleaner_status & ~PAGE_CLEANER_IDLE) |
+      (PAGE_CLEANER_IDLE * deep_sleep);
   }
 
   /** Update server last activity count */
@@ -1765,16 +1805,11 @@ public:
 					to read this for heuristic
 					purposes without holding any
 					mutex or latch */
-	bool		try_LRU_scan;	/*!< Cleared when an LRU
-					scan for free block fails. This
-					flag is used to avoid repeated
-					scans of LRU list when we know
-					that there is no free block
-					available in the scan depth for
-					eviction. Set whenever
-					we flush a batch from the
-					buffer pool. Protected by the
-					buf_pool.mutex */
+  /** Cleared when buf_LRU_get_free_block() fails.
+  Whenever a block has been evicted in buf_page_write_complete() or
+  buf_flush_LRU(), this will be set and done_free will be broadcast.
+  Protected by buf_pool.mutex. */
+  Atomic_relaxed<bool> try_LRU_scan;
 	/* @} */
 
 	/** @name LRU replacement algorithm fields */
@@ -1845,7 +1880,8 @@ public:
     if (n_pend_reads)
       return true;
     mysql_mutex_lock(&flush_list_mutex);
-    const bool any_pending= n_flush || buf_dblwr.pending_writes();
+    const bool any_pending= page_cleaner_status > PAGE_CLEANER_IDLE ||
+      buf_dblwr.pending_writes();
     mysql_mutex_unlock(&flush_list_mutex);
     return any_pending;
   }
