@@ -4493,12 +4493,14 @@ public:
   int save_in_field(Field *field, bool no_conversions) override;
   longlong val_int() override;
   double val_real() override { return (double)val_int(); }
-  void set(longlong packed, enum_mysql_timestamp_type ts_type);
+  void set(const MYSQL_TIME *datetime) { ltime= *datetime; }
+  void set_from_packed(longlong packed, enum_mysql_timestamp_type ts_type);
   bool get_date(THD *thd, MYSQL_TIME *to, date_mode_t fuzzydate) override
   {
     *to= ltime;
     return false;
   }
+  void print(String *str, enum_query_type query_type) override;
 };
 
 

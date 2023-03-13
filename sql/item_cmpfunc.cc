@@ -7827,21 +7827,18 @@ Date_cmp_func_rewriter::Date_cmp_func_rewriter(THD* thd,
 {
   if (!check_cond_match_and_prepare(item_func))
     return;
+
   /*
     This is an equality. Do a rewrite like this:
-    "YEAR(col) = val"  ->  col >= YEAR_START(val) AND col<=YEAR_END(val)
+    "YEAR(col) = val"  ->  col BETWEEN <year_start(val)> AND <year_end(val)>
+    "DATE(col) = val"  ->  col BETWEEN <day_start(val)> AND <day_end(val)>
   */
-  Item *start_const, *end_const;
-  if (!(start_const= create_start_bound()) || !(end_const= create_end_bound()))
+  Item *start_bound, *end_bound;
+  if (!(start_bound= create_start_bound()) || !(end_bound= create_end_bound()))
     return;
-
-  Item *col_gt, *col_lt;
-  if (!(col_gt= create_cmp_func(Item_func::GE_FUNC, field_ref, start_const)) ||
-      !(col_lt= create_cmp_func(Item_func::LE_FUNC, field_ref, end_const)))
-    return;
-
   Item *new_cond;
-  if (!(new_cond= new (thd->mem_root) Item_cond_and(thd, col_gt, col_lt)))
+  if (!(new_cond= new (thd->mem_root) Item_func_between(thd, field_ref,
+                                                        start_bound, end_bound)))
     return;
   if (!new_cond->fix_fields(thd, &new_cond))
     result= new_cond;
@@ -7864,16 +7861,16 @@ void Date_cmp_func_rewriter::rewrite_le_gt_lt_ge()
   if (rewrite_func_type == Item_func::LE_FUNC ||
       rewrite_func_type == Item_func::GT_FUNC)
   {
-    const_value= create_end_bound();
+    const_arg_value= create_end_bound();
   }
   else if (rewrite_func_type == Item_func::LT_FUNC ||
            rewrite_func_type == Item_func::GE_FUNC)
   {
-    const_value= create_start_bound();
+    const_arg_value= create_start_bound();
   }
-  if (!const_value)
+  if (!const_arg_value)
     return;
-  Item *repl= create_cmp_func(rewrite_func_type, field_ref, const_value);
+  Item *repl= create_cmp_func(rewrite_func_type, field_ref, const_arg_value);
   if (!repl)
     return;
   if (!repl->fix_fields(thd, &repl))
@@ -7933,7 +7930,7 @@ bool Date_cmp_func_rewriter::check_cond_match_and_prepare(Item_func *item_func)
                                         &argument_func_type)) &&
       args[1]->basic_const_item())
   {
-    const_value= args[1];
+    const_arg_value= args[1];
     condition_matches= true;
   }
   else
@@ -7949,7 +7946,7 @@ bool Date_cmp_func_rewriter::check_cond_match_and_prepare(Item_func *item_func)
       Ok, the condition has form like "const<YEAR(const)". Turn it around
       to be "YEAR(col)>const"
     */
-    const_value= args[0];
+    const_arg_value= args[0];
 
     /*
       This cast is safe because all Item classes that have func_type that we
@@ -7966,7 +7963,7 @@ bool Date_cmp_func_rewriter::check_cond_match_and_prepare(Item_func *item_func)
 
   Also
   - key_col must be covered by an index usable by the current query
-  - key_col must have a DATE[TIME] type (TIMESTAMP is not supported, see below)
+  - key_col must have a DATE[TIME] or TIMESTAMP type
   - The value of the YEAR(..) or DATE(..) function must be compared using an a
     appropriate comparison_type.
 
@@ -8011,16 +8008,11 @@ Item_field *Date_cmp_func_rewriter::is_date_rounded_field(Item* item,
       Item_field *item_field= (Item_field*)(arg->real_item());
       const key_map * used_indexes=
         &item_field->field->table->keys_in_use_for_query;
-
-      /*
-        Don't do the rewrite for TIMESTAMP datatype. In order to handle
-        timestamp, we will need to support leap seconds, and MDEV-13995
-        should be fixed too.
-      */
       enum_field_types field_type= item_field->field_type();
       if ((field_type == MYSQL_TYPE_DATE ||
            field_type == MYSQL_TYPE_DATETIME ||
-           field_type == MYSQL_TYPE_NEWDATE) &&
+           field_type == MYSQL_TYPE_NEWDATE ||
+           field_type == MYSQL_TYPE_TIMESTAMP) &&
           item_field->field->part_of_key.is_overlapping(*used_indexes))
       {
         *out_func_type= func_type;
@@ -8031,19 +8023,34 @@ Item_field *Date_cmp_func_rewriter::is_date_rounded_field(Item* item,
   return nullptr;
 }
 
-
 Item *Date_cmp_func_rewriter::create_start_bound()
 {
-  Item *res;
+  Item_datetime *res;
+  MYSQL_TIME const_arg_ts;
+  memset(&const_arg_ts, 0, sizeof(const_arg_ts));
+  const_arg_ts.time_type= MYSQL_TIMESTAMP_DATETIME;
   switch (argument_func_type) {
   case Item_func::YEAR_FUNC:
-    res= new (thd->mem_root) Item_func_year_start(thd, const_value);
+    res= new (thd->mem_root) Item_datetime(thd);
+    const_arg_ts.year= const_arg_value->val_int();
+    const_arg_ts.month= 1;
+    const_arg_ts.day= 1;
+    res->set(&const_arg_ts);
     break;
   case Item_func::DATE_FUNC:
     if (field_ref->field->type() == MYSQL_TYPE_DATE)
-      res= const_value;
+      return const_arg_value;
     else
-      res= new (thd->mem_root) Item_func_day_start(thd, const_value);
+    {
+      res= new (thd->mem_root) Item_datetime(thd);
+      Datetime const_arg_dt(current_thd, const_arg_value);
+      if (!const_arg_dt.is_valid_datetime())
+        return nullptr;
+      const_arg_dt.copy_to_mysql_time(&const_arg_ts);
+      const_arg_ts.second_part= const_arg_ts.second= const_arg_ts.minute= const_arg_ts.hour= 0;
+      const_arg_ts.time_type= MYSQL_TIMESTAMP_DATETIME;
+      res->set(&const_arg_ts);
+    }
     break;
   default:
     DBUG_ASSERT(0);
@@ -8056,16 +8063,39 @@ Item *Date_cmp_func_rewriter::create_start_bound()
 
 Item *Date_cmp_func_rewriter::create_end_bound()
 {
-  Item *res;
+  Item_datetime *res;
+  MYSQL_TIME const_arg_ts;
+  memset(&const_arg_ts, 0, sizeof(const_arg_ts));
+  const_arg_ts.time_type= MYSQL_TIMESTAMP_DATETIME;
   switch (argument_func_type) {
   case Item_func::YEAR_FUNC:
-    res= new (thd->mem_root) Item_func_year_end(thd, const_value);
+    res= new (thd->mem_root) Item_datetime(thd);
+    const_arg_ts.year= const_arg_value->val_int();
+    const_arg_ts.month= 12;
+    const_arg_ts.day= 31;
+    const_arg_ts.hour= 23;
+    const_arg_ts.minute= TIME_MAX_MINUTE;
+    const_arg_ts.second= TIME_MAX_SECOND;
+    const_arg_ts.second_part= TIME_MAX_SECOND_PART;
+    res->set(&const_arg_ts);
     break;
   case Item_func::DATE_FUNC:
     if (field_ref->field->type() == MYSQL_TYPE_DATE)
-      res= const_value;
+      return const_arg_value;
     else
-      res= new (thd->mem_root) Item_func_day_end(thd, const_value);
+    {
+      res= new (thd->mem_root) Item_datetime(thd);
+      Datetime const_arg_dt(current_thd, const_arg_value);
+      if (!const_arg_dt.is_valid_datetime())
+        return nullptr;
+      const_arg_dt.copy_to_mysql_time(&const_arg_ts);
+      const_arg_ts.hour= 23;
+      const_arg_ts.minute= TIME_MAX_MINUTE;
+      const_arg_ts.second= TIME_MAX_SECOND;
+      const_arg_ts.second_part=TIME_MAX_SECOND_PART;
+      const_arg_ts.time_type= MYSQL_TIMESTAMP_DATETIME;
+      res->set(&const_arg_ts);
+    }
     break;
   default:
     DBUG_ASSERT(0);

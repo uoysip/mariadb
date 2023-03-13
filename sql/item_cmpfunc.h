@@ -823,7 +823,7 @@ private:
   Item *create_cmp_func(Item_func::Functype func_type, Item *arg1, Item *arg2);
 
   THD *thd= nullptr;
-  Item *const_value= nullptr;
+  Item *const_arg_value= nullptr;
   Item_func::Functype rewrite_func_type;
   Item_func::Functype argument_func_type;
   Item_field *field_ref= nullptr;
@@ -1680,7 +1680,7 @@ public:
   {
     packed_longlong *val= reinterpret_cast<packed_longlong*>(base)+pos;
     Item_datetime *dt= static_cast<Item_datetime*>(item);
-    dt->set(val->val, type_handler()->mysql_timestamp_type());
+    dt->set_from_packed(val->val, type_handler()->mysql_timestamp_type());
   }
   friend int cmp_longlong(void *cmp_arg, packed_longlong *a,packed_longlong *b);
 };
