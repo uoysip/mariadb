@@ -81,18 +81,15 @@ create table tmp as select * from t1 where c1 = 1 and exists (select 'X' from t1
 explain select * from t1 where c1 = 1 and exists (select 'X' from t1 a where a.c1 = t1.c2);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	ALL	NULL	NULL	NULL	NULL	32	
+1	PRIMARY	a	ALL	NULL	NULL	NULL	NULL	32	Using where; FirstMatch(t1); Using join buffer (flat, BNL join)
 explain delete from t1 where c1 = 1 and exists (select 'X' from t1 a where a.c1 = t1.c2);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	ALL	NULL	NULL	NULL	NULL	32	
+1	PRIMARY	a	ALL	NULL	NULL	NULL	NULL	32	Using where; FirstMatch(t1)
 analyze delete from t1 where c1 = 1 and exists (select 'X' from t1 a where a.c1 = t1.c2);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	r_rows	filtered	r_filtered	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	32.00	9.38	9.38	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	0.67	100.00	100.00	
-2	MATERIALIZED	a	ALL	NULL	NULL	NULL	NULL	32	32.00	100.00	100.00	
+1	PRIMARY	a	ALL	NULL	NULL	NULL	NULL	32	12.00	100.00	5.56	Using where; FirstMatch(t1)
 select * from t1;
 c1	c2	c3
 1	3	3
@@ -139,13 +136,11 @@ create table tmp as select * from t1 where exists (select 'X' from t1 a where a.
 explain select * from t1 where exists (select 'X' from t1 a where a.c2 = t1.c2) and c2 = 3;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	ALL	NULL	NULL	NULL	NULL	32	Using where
+1	PRIMARY	a	ALL	NULL	NULL	NULL	NULL	32	Using where; FirstMatch(t1); Using join buffer (flat, BNL join)
 explain delete from t1 where exists (select 'X' from t1 a where a.c2 = t1.c2) and c2 = 3;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	ALL	NULL	NULL	NULL	NULL	32	Using where
+1	PRIMARY	a	ALL	NULL	NULL	NULL	NULL	32	Using where; FirstMatch(t1)
 delete from t1 where exists (select 'X' from t1 a where a.c2 = t1.c2) and c2 = 3;
 affected rows: 8
 select * from t1;
@@ -740,22 +735,21 @@ and c1 = 2
 and exists (select 'X' from v1 a where a.c1 = v1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	#	Using where
-1	PRIMARY	<subquery3>	eq_ref	distinct_key	distinct_key	4	func	#	
-3	MATERIALIZED	t1	ALL	NULL	NULL	NULL	NULL	#	Using where
+1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	#	Using where; FirstMatch(t1); Using join buffer (flat, BNL join)
 2	DEPENDENT SUBQUERY	a	ALL	NULL	NULL	NULL	NULL	#	Using where
 explain delete from v1 where v1.c2 in (select max(a.c2) from t1 a where a.c3 = v1.c3)
 and c1 = 2
 and exists (select 'X' from v1 a where a.c1 = v1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	#	Using where
-3	MATERIALIZED	t1	ALL	NULL	NULL	NULL	NULL	#	Using where
+3	DEPENDENT SUBQUERY	t1	ALL	NULL	NULL	NULL	NULL	#	Using where
 2	DEPENDENT SUBQUERY	a	ALL	NULL	NULL	NULL	NULL	#	Using where
 analyze delete from v1 where v1.c2 in (select max(a.c2) from t1 a where a.c3 = v1.c3)
 and c1 = 2
 and exists (select 'X' from v1 a where a.c1 = v1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	r_rows	filtered	r_filtered	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	#	32.00	3.91	3.12	Using where
-3	MATERIALIZED	t1	ALL	NULL	NULL	NULL	NULL	#	32.00	25.00	25.00	Using where
+3	DEPENDENT SUBQUERY	t1	ALL	NULL	NULL	NULL	NULL	#	31.00	25.00	3.23	Using where
 2	DEPENDENT SUBQUERY	a	ALL	NULL	NULL	NULL	NULL	#	32.00	100.00	3.12	Using where
 select * from t1;
 c1	c2	c3
@@ -856,18 +850,15 @@ create table tmp as select * from t1 where c1 = 1 and exists (select 'X' from t1
 explain select * from t1 where c1 = 1 and exists (select 'X' from t1 a where a.c1 = t1.c2);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	index	NULL	t1_c2	10	NULL	32	Using index
+1	PRIMARY	a	index	NULL	t1_c2	10	NULL	32	Using where; Using index; FirstMatch(t1); Using join buffer (flat, BNL join)
 explain delete from t1 where c1 = 1 and exists (select 'X' from t1 a where a.c1 = t1.c2);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	index	NULL	t1_c2	10	NULL	32	Using index
+1	PRIMARY	a	index	NULL	t1_c2	10	NULL	32	Using where; Using index; FirstMatch(t1)
 analyze delete from t1 where c1 = 1 and exists (select 'X' from t1 a where a.c1 = t1.c2);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	r_rows	filtered	r_filtered	Extra
 1	PRIMARY	t1	ALL	t1_c2	NULL	NULL	NULL	32	32.00	9.38	9.38	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	0.67	100.00	100.00	
-2	MATERIALIZED	a	index	NULL	t1_c2	10	NULL	32	32.00	100.00	100.00	Using index
+1	PRIMARY	a	index	NULL	t1_c2	10	NULL	32	11.67	100.00	5.71	Using where; Using index; FirstMatch(t1)
 select * from t1;
 c1	c2	c3
 1	3	3
@@ -913,14 +904,12 @@ test.t1	analyze	status	OK
 create table tmp as select * from t1 where exists (select 'X' from t1 a where a.c2 = t1.c2) and c2 = 3;
 explain select * from t1 where exists (select 'X' from t1 a where a.c2 = t1.c2) and c2 = 3;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
-1	PRIMARY	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	ref	t1_c2	t1_c2	5	const	8	Using index
+1	PRIMARY	t1	ref	t1_c2	t1_c2	5	const	8	
+1	PRIMARY	a	ref	t1_c2	t1_c2	5	const	8	Using index; FirstMatch(t1)
 explain delete from t1 where exists (select 'X' from t1 a where a.c2 = t1.c2) and c2 = 3;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ref	t1_c2	t1_c2	5	const	8	
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	ref	t1_c2	t1_c2	5	const	8	Using index
+1	PRIMARY	a	ref	t1_c2	t1_c2	5	const	8	Using index; FirstMatch(t1)
 delete from t1 where exists (select 'X' from t1 a where a.c2 = t1.c2) and c2 = 3;
 affected rows: 8
 select * from t1;
@@ -1051,7 +1040,7 @@ id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 analyze delete from t1 where c1 in (select a.c2 from t1 a where a.c2 = t1.c3) limit 1;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	r_rows	filtered	r_filtered	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	30.00	100.00	13.33	Using where
-1	PRIMARY	a	ref	t1_c2	t1_c2	5	test.t1.c1	5	0.25	100.00	100.00	Using index; FirstMatch(t1)
+1	PRIMARY	a	ref	t1_c2	t1_c2	5	test.t1.c1	5	0.25	18.75	100.00	Using index; FirstMatch(t1)
 select * from t1;
 c1	c2	c3
 1	2	2
@@ -1515,8 +1504,7 @@ and c1 = 2
 and exists (select 'X' from v1 a where a.c1 = v1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ref	t1_c2	t1_c2	10	const,const	#	Using where
-1	PRIMARY	<subquery3>	eq_ref	distinct_key	distinct_key	4	func	#	
-3	MATERIALIZED	t1	ref	t1_c2	t1_c2	10	const,const	#	Using index
+1	PRIMARY	t1	ref	t1_c2	t1_c2	10	const,const	#	Using index; FirstMatch(t1)
 2	DEPENDENT SUBQUERY	a	ALL	NULL	NULL	NULL	NULL	#	Using where
 explain delete from v1 where v1.c2 in (select max(a.c2) from t1 a where a.c3 = v1.c3)
 and c1 = 2
@@ -1581,11 +1569,11 @@ create table tmp as select * from t1 where c1=(select a.c3 from t1 a where a.c3 
 explain select * from t1 where c1=(select a.c3 from t1 a where a.c3 = t1.c3);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-2	DEPENDENT SUBQUERY	a	eq_ref	PRIMARY	PRIMARY	4	test.t1.c3	1	Using index
+2	DEPENDENT SUBQUERY	a	eq_ref	PRIMARY	PRIMARY	4	test.t1.c3	1	
 explain delete from t1 where c1=(select a.c3 from t1 a where a.c3 = t1.c3);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-2	DEPENDENT SUBQUERY	a	eq_ref	PRIMARY	PRIMARY	4	test.t1.c3	1	Using index
+2	DEPENDENT SUBQUERY	a	eq_ref	PRIMARY	PRIMARY	4	test.t1.c3	1	
 delete from t1 where c1=(select a.c3 from t1 a where a.c3 = t1.c3);
 affected rows: 4
 select * from t1;
@@ -1632,18 +1620,15 @@ create table tmp as select * from t1 where c1 = 1 and exists (select 'X' from t1
 explain select * from t1 where c1 = 1 and exists (select 'X' from t1 a where a.c1 = t1.c2);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	ALL	NULL	NULL	NULL	NULL	32	
+1	PRIMARY	a	ALL	NULL	NULL	NULL	NULL	32	Using where; FirstMatch(t1); Using join buffer (flat, BNL join)
 explain delete from t1 where c1 = 1 and exists (select 'X' from t1 a where a.c1 = t1.c2);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	ALL	NULL	NULL	NULL	NULL	32	
+1	PRIMARY	a	ALL	NULL	NULL	NULL	NULL	32	Using where; FirstMatch(t1)
 analyze delete from t1 where c1 = 1 and exists (select 'X' from t1 a where a.c1 = t1.c2);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	r_rows	filtered	r_filtered	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	32.00	9.38	9.38	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	0.67	100.00	100.00	
-2	MATERIALIZED	a	ALL	NULL	NULL	NULL	NULL	32	32.00	100.00	100.00	
+1	PRIMARY	a	ALL	NULL	NULL	NULL	NULL	32	12.33	100.00	5.41	Using where; FirstMatch(t1)
 select * from t1;
 c1	c2	c3
 1	3	3
@@ -1690,13 +1675,11 @@ create table tmp as select * from t1 where exists (select 'X' from t1 a where a.
 explain select * from t1 where exists (select 'X' from t1 a where a.c2 = t1.c2) and c2 = 3;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	ALL	NULL	NULL	NULL	NULL	32	Using where
+1	PRIMARY	a	ALL	NULL	NULL	NULL	NULL	32	Using where; FirstMatch(t1); Using join buffer (flat, BNL join)
 explain delete from t1 where exists (select 'X' from t1 a where a.c2 = t1.c2) and c2 = 3;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	ALL	NULL	NULL	NULL	NULL	32	Using where
+1	PRIMARY	a	ALL	NULL	NULL	NULL	NULL	32	Using where; FirstMatch(t1)
 delete from t1 where exists (select 'X' from t1 a where a.c2 = t1.c2) and c2 = 3;
 affected rows: 8
 select * from t1;
@@ -1827,7 +1810,7 @@ id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 analyze delete from t1 where c1 in (select a.c2 from t1 a where a.c2 = t1.c3) limit 1;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	r_rows	filtered	r_filtered	Extra
 1	PRIMARY	a	ALL	NULL	NULL	NULL	NULL	32	1.00	100.00	100.00	Using where; Start temporary
-1	PRIMARY	t1	eq_ref	PRIMARY	PRIMARY	4	test.a.c2	1	1.00	100.00	100.00	Using where; End temporary
+1	PRIMARY	t1	eq_ref	PRIMARY	PRIMARY	4	test.a.c2	1	1.00	3.12	100.00	Using where; End temporary
 select * from t1;
 c1	c2	c3
 1	2	2
@@ -2291,22 +2274,21 @@ and c1 = 2
 and exists (select 'X' from v1 a where a.c1 = v1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	#	Using where
-1	PRIMARY	<subquery3>	eq_ref	distinct_key	distinct_key	4	func	#	
-3	MATERIALIZED	t1	ALL	NULL	NULL	NULL	NULL	#	Using where
+1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	#	Using where; FirstMatch(t1); Using join buffer (flat, BNL join)
 2	DEPENDENT SUBQUERY	a	eq_ref	PRIMARY	PRIMARY	4	test.t1.c3	#	
 explain delete from v1 where v1.c2 in (select max(a.c2) from t1 a where a.c3 = v1.c3)
 and c1 = 2
 and exists (select 'X' from v1 a where a.c1 = v1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	#	Using where
-3	MATERIALIZED	t1	ALL	NULL	NULL	NULL	NULL	#	Using where
+3	DEPENDENT SUBQUERY	t1	ALL	NULL	NULL	NULL	NULL	#	Using where
 2	DEPENDENT SUBQUERY	a	eq_ref	PRIMARY	PRIMARY	4	test.t1.c3	#	
 analyze delete from v1 where v1.c2 in (select max(a.c2) from t1 a where a.c3 = v1.c3)
 and c1 = 2
 and exists (select 'X' from v1 a where a.c1 = v1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	r_rows	filtered	r_filtered	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	#	32.00	3.91	3.12	Using where
-3	MATERIALIZED	t1	ALL	NULL	NULL	NULL	NULL	#	32.00	25.00	25.00	Using where
+3	DEPENDENT SUBQUERY	t1	ALL	NULL	NULL	NULL	NULL	#	5.00	25.00	20.00	Using where
 2	DEPENDENT SUBQUERY	a	eq_ref	PRIMARY	PRIMARY	4	test.t1.c3	#	1.00	100.00	100.00	
 select * from t1;
 c1	c2	c3
@@ -2501,18 +2483,15 @@ create table tmp as select * from t1 where c1 = 1 and exists (select 'X' from t1
 explain select * from t1 where c1 = 1 and exists (select 'X' from t1 a where a.c1 = t1.c2);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	ALL	NULL	NULL	NULL	NULL	32	
+1	PRIMARY	a	ALL	NULL	NULL	NULL	NULL	32	Using where; FirstMatch(t1); Using join buffer (flat, BNL join)
 explain delete from t1 where c1 = 1 and exists (select 'X' from t1 a where a.c1 = t1.c2);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	ALL	NULL	NULL	NULL	NULL	32	
+1	PRIMARY	a	ALL	NULL	NULL	NULL	NULL	32	Using where; FirstMatch(t1)
 analyze delete from t1 where c1 = 1 and exists (select 'X' from t1 a where a.c1 = t1.c2);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	r_rows	filtered	r_filtered	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	32.00	9.38	9.38	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	0.67	100.00	100.00	
-2	MATERIALIZED	a	ALL	NULL	NULL	NULL	NULL	32	32.00	100.00	100.00	
+1	PRIMARY	a	ALL	NULL	NULL	NULL	NULL	32	12.67	100.00	5.26	Using where; FirstMatch(t1)
 select * from t1;
 c1	c2	c3
 1	3	3
@@ -2559,13 +2538,11 @@ create table tmp as select * from t1 where exists (select 'X' from t1 a where a.
 explain select * from t1 where exists (select 'X' from t1 a where a.c2 = t1.c2) and c2 = 3;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	ALL	NULL	NULL	NULL	NULL	32	Using where
+1	PRIMARY	a	ALL	NULL	NULL	NULL	NULL	32	Using where; FirstMatch(t1); Using join buffer (flat, BNL join)
 explain delete from t1 where exists (select 'X' from t1 a where a.c2 = t1.c2) and c2 = 3;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	ALL	NULL	NULL	NULL	NULL	32	Using where
+1	PRIMARY	a	ALL	NULL	NULL	NULL	NULL	32	Using where; FirstMatch(t1)
 delete from t1 where exists (select 'X' from t1 a where a.c2 = t1.c2) and c2 = 3;
 affected rows: 8
 select * from t1;
@@ -3160,22 +3137,21 @@ and c1 = 2
 and exists (select 'X' from v1 a where a.c1 = v1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	#	Using where
-1	PRIMARY	<subquery3>	eq_ref	distinct_key	distinct_key	4	func	#	
-3	MATERIALIZED	t1	ALL	NULL	NULL	NULL	NULL	#	Using where
+1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	#	Using where; FirstMatch(t1); Using join buffer (flat, BNL join)
 2	DEPENDENT SUBQUERY	a	ALL	NULL	NULL	NULL	NULL	#	Using where
 explain delete from v1 where v1.c2 in (select max(a.c2) from t1 a where a.c3 = v1.c3)
 and c1 = 2
 and exists (select 'X' from v1 a where a.c1 = v1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	#	Using where
-3	MATERIALIZED	t1	ALL	NULL	NULL	NULL	NULL	#	Using where
+3	DEPENDENT SUBQUERY	t1	ALL	NULL	NULL	NULL	NULL	#	Using where
 2	DEPENDENT SUBQUERY	a	ALL	NULL	NULL	NULL	NULL	#	Using where
 analyze delete from v1 where v1.c2 in (select max(a.c2) from t1 a where a.c3 = v1.c3)
 and c1 = 2
 and exists (select 'X' from v1 a where a.c1 = v1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	r_rows	filtered	r_filtered	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	#	32.00	3.91	3.12	Using where
-3	MATERIALIZED	t1	ALL	NULL	NULL	NULL	NULL	#	32.00	25.00	25.00	Using where
+3	DEPENDENT SUBQUERY	t1	ALL	NULL	NULL	NULL	NULL	#	5.00	25.00	20.00	Using where
 2	DEPENDENT SUBQUERY	a	ALL	NULL	NULL	NULL	NULL	#	32.00	100.00	3.12	Using where
 select * from t1;
 c1	c2	c3
@@ -3276,18 +3252,15 @@ create table tmp as select * from t1 where c1 = 1 and exists (select 'X' from t1
 explain select * from t1 where c1 = 1 and exists (select 'X' from t1 a where a.c1 = t1.c2);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	index	NULL	t1_c2	10	NULL	32	Using index
+1	PRIMARY	a	index	NULL	t1_c2	10	NULL	32	Using where; Using index; FirstMatch(t1); Using join buffer (flat, BNL join)
 explain delete from t1 where c1 = 1 and exists (select 'X' from t1 a where a.c1 = t1.c2);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	index	NULL	t1_c2	10	NULL	32	Using index
+1	PRIMARY	a	index	NULL	t1_c2	10	NULL	32	Using where; Using index; FirstMatch(t1)
 analyze delete from t1 where c1 = 1 and exists (select 'X' from t1 a where a.c1 = t1.c2);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	r_rows	filtered	r_filtered	Extra
 1	PRIMARY	t1	ALL	t1_c2	NULL	NULL	NULL	32	32.00	9.38	9.38	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	0.67	100.00	100.00	
-2	MATERIALIZED	a	index	NULL	t1_c2	10	NULL	32	32.00	100.00	100.00	Using index
+1	PRIMARY	a	index	NULL	t1_c2	10	NULL	32	11.67	100.00	5.71	Using where; Using index; FirstMatch(t1)
 select * from t1;
 c1	c2	c3
 1	3	3
@@ -3334,13 +3307,11 @@ create table tmp as select * from t1 where exists (select 'X' from t1 a where a.
 explain select * from t1 where exists (select 'X' from t1 a where a.c2 = t1.c2) and c2 = 3;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ref	t1_c2	t1_c2	5	const	8	
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	ref	t1_c2	t1_c2	5	const	8	Using index
+1	PRIMARY	a	ref	t1_c2	t1_c2	5	const	8	Using index; FirstMatch(t1)
 explain delete from t1 where exists (select 'X' from t1 a where a.c2 = t1.c2) and c2 = 3;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ref	t1_c2	t1_c2	5	const	8	
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	ref	t1_c2	t1_c2	5	const	8	Using index
+1	PRIMARY	a	ref	t1_c2	t1_c2	5	const	8	Using index; FirstMatch(t1)
 delete from t1 where exists (select 'X' from t1 a where a.c2 = t1.c2) and c2 = 3;
 affected rows: 8
 select * from t1;
@@ -3383,21 +3354,18 @@ and c2 >= 3 order by c2;
 explain select * from t1 where exists (select 'X' from t1 a where a.c2 = t1.c2)
 and c2 >= 3 order by c2;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
-1	PRIMARY	t1	ALL	t1_c2	NULL	NULL	NULL	#	Using where; Using filesort
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	#	
-2	MATERIALIZED	a	range	t1_c2	t1_c2	5	NULL	#	Using where; Using index
+1	PRIMARY	t1	range	t1_c2	t1_c2	5	NULL	#	Using index condition
+1	PRIMARY	a	ref	t1_c2	t1_c2	5	test.t1.c2	#	Using index; FirstMatch(t1)
 explain delete from t1 where exists (select 'X' from t1 a where a.c2 = t1.c2)
 and c2 >= 3 order by c2;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
-1	PRIMARY	t1	range	t1_c2	t1_c2	5	NULL	#	Using index condition
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	#	
-2	MATERIALIZED	a	range	t1_c2	t1_c2	5	NULL	#	Using where; Using index
+1	PRIMARY	a	index	t1_c2	t1_c2	10	NULL	#	Using where; Using index; LooseScan
+1	PRIMARY	t1	ref	t1_c2	t1_c2	5	test.a.c2	#	
 analyze delete from t1 where exists (select 'X' from t1 a where a.c2 = t1.c2)
 and c2 >= 3 order by c2;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	r_rows	filtered	r_filtered	Extra
-1	PRIMARY	t1	range	t1_c2	t1_c2	5	NULL	#	20.00	100.00	100.00	Using index condition
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	#	1.00	100.00	100.00	
-2	MATERIALIZED	a	range	t1_c2	t1_c2	5	NULL	#	20.00	100.00	100.00	Using where; Using index
+1	PRIMARY	a	index	t1_c2	t1_c2	10	NULL	#	16.00	20.00	25.00	Using where; Using index; LooseScan
+1	PRIMARY	t1	ref	t1_c2	t1_c2	5	test.a.c2	#	5.00	4.76	100.00	
 select * from t1;
 c1	c2	c3
 1	1	1
@@ -3471,7 +3439,7 @@ id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 analyze delete from t1 where c1 in (select a.c2 from t1 a where a.c2 = t1.c3) limit 1;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	r_rows	filtered	r_filtered	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	30.00	100.00	13.33	Using where
-1	PRIMARY	a	ref	t1_c2	t1_c2	5	test.t1.c1	5	0.25	100.00	100.00	Using index; FirstMatch(t1)
+1	PRIMARY	a	ref	t1_c2	t1_c2	5	test.t1.c1	5	0.25	18.75	100.00	Using index; FirstMatch(t1)
 select * from t1;
 c1	c2	c3
 1	2	2
@@ -3935,8 +3903,7 @@ and c1 = 2
 and exists (select 'X' from v1 a where a.c1 = v1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ref	t1_c2	t1_c2	10	const,const	#	Using where
-1	PRIMARY	<subquery3>	eq_ref	distinct_key	distinct_key	4	func	#	
-3	MATERIALIZED	t1	ref	t1_c2	t1_c2	10	const,const	#	Using index
+1	PRIMARY	t1	ref	t1_c2	t1_c2	10	const,const	#	Using index; FirstMatch(t1)
 2	DEPENDENT SUBQUERY	a	ALL	NULL	NULL	NULL	NULL	#	Using where
 explain delete from v1 where v1.c2 in (select max(a.c2) from t1 a where a.c3 = v1.c3)
 and c1 = 2
@@ -4052,18 +4019,15 @@ create table tmp as select * from t1 where c1 = 1 and exists (select 'X' from t1
 explain select * from t1 where c1 = 1 and exists (select 'X' from t1 a where a.c1 = t1.c2);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	ALL	NULL	NULL	NULL	NULL	32	
+1	PRIMARY	a	ALL	NULL	NULL	NULL	NULL	32	Using where; FirstMatch(t1); Using join buffer (flat, BNL join)
 explain delete from t1 where c1 = 1 and exists (select 'X' from t1 a where a.c1 = t1.c2);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	ALL	NULL	NULL	NULL	NULL	32	
+1	PRIMARY	a	ALL	NULL	NULL	NULL	NULL	32	Using where; FirstMatch(t1)
 analyze delete from t1 where c1 = 1 and exists (select 'X' from t1 a where a.c1 = t1.c2);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	r_rows	filtered	r_filtered	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	32.00	9.38	9.38	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	0.67	100.00	100.00	
-2	MATERIALIZED	a	ALL	NULL	NULL	NULL	NULL	32	32.00	100.00	100.00	
+1	PRIMARY	a	ALL	NULL	NULL	NULL	NULL	32	11.67	100.00	5.71	Using where; FirstMatch(t1)
 select * from t1;
 c1	c2	c3
 1	3	3
@@ -4110,13 +4074,11 @@ create table tmp as select * from t1 where exists (select 'X' from t1 a where a.
 explain select * from t1 where exists (select 'X' from t1 a where a.c2 = t1.c2) and c2 = 3;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	ALL	NULL	NULL	NULL	NULL	32	Using where
+1	PRIMARY	a	ALL	NULL	NULL	NULL	NULL	32	Using where; FirstMatch(t1); Using join buffer (flat, BNL join)
 explain delete from t1 where exists (select 'X' from t1 a where a.c2 = t1.c2) and c2 = 3;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	ALL	NULL	NULL	NULL	NULL	32	Using where
+1	PRIMARY	a	ALL	NULL	NULL	NULL	NULL	32	Using where; FirstMatch(t1)
 delete from t1 where exists (select 'X' from t1 a where a.c2 = t1.c2) and c2 = 3;
 affected rows: 8
 select * from t1;
@@ -4247,7 +4209,7 @@ id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 analyze delete from t1 where c1 in (select a.c2 from t1 a where a.c2 = t1.c3) limit 1;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	r_rows	filtered	r_filtered	Extra
 1	PRIMARY	a	ALL	NULL	NULL	NULL	NULL	32	4.00	100.00	100.00	Using where; Start temporary
-1	PRIMARY	t1	eq_ref	PRIMARY	PRIMARY	4	test.a.c2	1	1.00	100.00	25.00	Using where; End temporary
+1	PRIMARY	t1	eq_ref	PRIMARY	PRIMARY	4	test.a.c2	1	1.00	3.12	25.00	Using where; End temporary
 select * from t1;
 c1	c2	c3
 1	2	2
@@ -4711,22 +4673,21 @@ and c1 = 2
 and exists (select 'X' from v1 a where a.c1 = v1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	#	Using where
-1	PRIMARY	<subquery3>	eq_ref	distinct_key	distinct_key	4	func	#	
-3	MATERIALIZED	t1	ALL	NULL	NULL	NULL	NULL	#	Using where
+1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	#	Using where; FirstMatch(t1); Using join buffer (flat, BNL join)
 2	DEPENDENT SUBQUERY	a	eq_ref	PRIMARY	PRIMARY	4	test.t1.c3	#	
 explain delete from v1 where v1.c2 in (select max(a.c2) from t1 a where a.c3 = v1.c3)
 and c1 = 2
 and exists (select 'X' from v1 a where a.c1 = v1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	#	Using where
-3	MATERIALIZED	t1	ALL	NULL	NULL	NULL	NULL	#	Using where
+3	DEPENDENT SUBQUERY	t1	ALL	NULL	NULL	NULL	NULL	#	Using where
 2	DEPENDENT SUBQUERY	a	eq_ref	PRIMARY	PRIMARY	4	test.t1.c3	#	
 analyze delete from v1 where v1.c2 in (select max(a.c2) from t1 a where a.c3 = v1.c3)
 and c1 = 2
 and exists (select 'X' from v1 a where a.c1 = v1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	r_rows	filtered	r_filtered	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	#	32.00	3.91	3.12	Using where
-3	MATERIALIZED	t1	ALL	NULL	NULL	NULL	NULL	#	32.00	25.00	25.00	Using where
+3	DEPENDENT SUBQUERY	t1	ALL	NULL	NULL	NULL	NULL	#	1.00	25.00	100.00	Using where
 2	DEPENDENT SUBQUERY	a	eq_ref	PRIMARY	PRIMARY	4	test.t1.c3	#	1.00	100.00	100.00	
 select * from t1;
 c1	c2	c3
@@ -4921,18 +4882,15 @@ create table tmp as select * from t1 where c1 = 1 and exists (select 'X' from t1
 explain select * from t1 where c1 = 1 and exists (select 'X' from t1 a where a.c1 = t1.c2);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	ALL	NULL	NULL	NULL	NULL	32	
+1	PRIMARY	a	ALL	NULL	NULL	NULL	NULL	32	Using where; FirstMatch(t1); Using join buffer (flat, BNL join)
 explain delete from t1 where c1 = 1 and exists (select 'X' from t1 a where a.c1 = t1.c2);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	ALL	NULL	NULL	NULL	NULL	32	
+1	PRIMARY	a	ALL	NULL	NULL	NULL	NULL	32	Using where; FirstMatch(t1)
 analyze delete from t1 where c1 = 1 and exists (select 'X' from t1 a where a.c1 = t1.c2);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	r_rows	filtered	r_filtered	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	32.00	9.38	9.38	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	0.67	100.00	100.00	
-2	MATERIALIZED	a	ALL	NULL	NULL	NULL	NULL	32	32.00	100.00	100.00	
+1	PRIMARY	a	ALL	NULL	NULL	NULL	NULL	32	12.67	100.00	5.26	Using where; FirstMatch(t1)
 select * from t1;
 c1	c2	c3
 1	3	3
@@ -4979,13 +4937,11 @@ create table tmp as select * from t1 where exists (select 'X' from t1 a where a.
 explain select * from t1 where exists (select 'X' from t1 a where a.c2 = t1.c2) and c2 = 3;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	ALL	NULL	NULL	NULL	NULL	32	Using where
+1	PRIMARY	a	ALL	NULL	NULL	NULL	NULL	32	Using where; FirstMatch(t1); Using join buffer (flat, BNL join)
 explain delete from t1 where exists (select 'X' from t1 a where a.c2 = t1.c2) and c2 = 3;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	ALL	NULL	NULL	NULL	NULL	32	Using where
+1	PRIMARY	a	ALL	NULL	NULL	NULL	NULL	32	Using where; FirstMatch(t1)
 delete from t1 where exists (select 'X' from t1 a where a.c2 = t1.c2) and c2 = 3;
 affected rows: 8
 select * from t1;
@@ -5580,22 +5536,21 @@ and c1 = 2
 and exists (select 'X' from v1 a where a.c1 = v1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	#	Using where
-1	PRIMARY	<subquery3>	eq_ref	distinct_key	distinct_key	4	func	#	
-3	MATERIALIZED	t1	ALL	NULL	NULL	NULL	NULL	#	Using where
+1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	#	Using where; FirstMatch(t1); Using join buffer (flat, BNL join)
 2	DEPENDENT SUBQUERY	a	ALL	NULL	NULL	NULL	NULL	#	Using where
 explain delete from v1 where v1.c2 in (select max(a.c2) from t1 a where a.c3 = v1.c3)
 and c1 = 2
 and exists (select 'X' from v1 a where a.c1 = v1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	#	Using where
-3	MATERIALIZED	t1	ALL	NULL	NULL	NULL	NULL	#	Using where
+3	DEPENDENT SUBQUERY	t1	ALL	NULL	NULL	NULL	NULL	#	Using where
 2	DEPENDENT SUBQUERY	a	ALL	NULL	NULL	NULL	NULL	#	Using where
 analyze delete from v1 where v1.c2 in (select max(a.c2) from t1 a where a.c3 = v1.c3)
 and c1 = 2
 and exists (select 'X' from v1 a where a.c1 = v1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	r_rows	filtered	r_filtered	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	#	32.00	3.91	3.12	Using where
-3	MATERIALIZED	t1	ALL	NULL	NULL	NULL	NULL	#	32.00	25.00	25.00	Using where
+3	DEPENDENT SUBQUERY	t1	ALL	NULL	NULL	NULL	NULL	#	5.00	25.00	20.00	Using where
 2	DEPENDENT SUBQUERY	a	ALL	NULL	NULL	NULL	NULL	#	32.00	100.00	3.12	Using where
 select * from t1;
 c1	c2	c3
@@ -5696,18 +5651,15 @@ create table tmp as select * from t1 where c1 = 1 and exists (select 'X' from t1
 explain select * from t1 where c1 = 1 and exists (select 'X' from t1 a where a.c1 = t1.c2);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	index	NULL	t1_c2	10	NULL	32	Using index
+1	PRIMARY	a	index	NULL	t1_c2	10	NULL	32	Using where; Using index; FirstMatch(t1); Using join buffer (flat, BNL join)
 explain delete from t1 where c1 = 1 and exists (select 'X' from t1 a where a.c1 = t1.c2);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	index	NULL	t1_c2	10	NULL	32	Using index
+1	PRIMARY	a	index	NULL	t1_c2	10	NULL	32	Using where; Using index; FirstMatch(t1)
 analyze delete from t1 where c1 = 1 and exists (select 'X' from t1 a where a.c1 = t1.c2);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	r_rows	filtered	r_filtered	Extra
 1	PRIMARY	t1	ALL	t1_c2	NULL	NULL	NULL	32	32.00	9.38	9.38	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	0.67	100.00	100.00	
-2	MATERIALIZED	a	index	NULL	t1_c2	10	NULL	32	32.00	100.00	100.00	Using index
+1	PRIMARY	a	index	NULL	t1_c2	10	NULL	32	11.67	100.00	5.71	Using where; Using index; FirstMatch(t1)
 select * from t1;
 c1	c2	c3
 1	3	3
@@ -5754,13 +5706,11 @@ create table tmp as select * from t1 where exists (select 'X' from t1 a where a.
 explain select * from t1 where exists (select 'X' from t1 a where a.c2 = t1.c2) and c2 = 3;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ref	t1_c2	t1_c2	5	const	8	
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	ref	t1_c2	t1_c2	5	const	8	Using index
+1	PRIMARY	a	ref	t1_c2	t1_c2	5	const	8	Using index; FirstMatch(t1)
 explain delete from t1 where exists (select 'X' from t1 a where a.c2 = t1.c2) and c2 = 3;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ref	t1_c2	t1_c2	5	const	8	
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	ref	t1_c2	t1_c2	5	const	8	Using index
+1	PRIMARY	a	ref	t1_c2	t1_c2	5	const	8	Using index; FirstMatch(t1)
 delete from t1 where exists (select 'X' from t1 a where a.c2 = t1.c2) and c2 = 3;
 affected rows: 8
 select * from t1;
@@ -5804,20 +5754,17 @@ explain select * from t1 where exists (select 'X' from t1 a where a.c2 = t1.c2)
 and c2 >= 3 order by c2;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	t1_c2	NULL	NULL	NULL	#	Using where; Using filesort
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	#	
-2	MATERIALIZED	a	range	t1_c2	t1_c2	5	NULL	#	Using where; Using index
+1	PRIMARY	a	ref	t1_c2	t1_c2	5	test.t1.c2	#	Using index; FirstMatch(t1)
 explain delete from t1 where exists (select 'X' from t1 a where a.c2 = t1.c2)
 and c2 >= 3 order by c2;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
-1	PRIMARY	t1	range	t1_c2	t1_c2	5	NULL	#	Using index condition
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	#	
-2	MATERIALIZED	a	range	t1_c2	t1_c2	5	NULL	#	Using where; Using index
+1	PRIMARY	a	index	t1_c2	t1_c2	10	NULL	#	Using where; Using index; LooseScan
+1	PRIMARY	t1	ref	t1_c2	t1_c2	5	test.a.c2	#	
 analyze delete from t1 where exists (select 'X' from t1 a where a.c2 = t1.c2)
 and c2 >= 3 order by c2;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	r_rows	filtered	r_filtered	Extra
-1	PRIMARY	t1	range	t1_c2	t1_c2	5	NULL	#	20.00	100.00	100.00	Using index condition
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	#	1.00	100.00	100.00	
-2	MATERIALIZED	a	range	t1_c2	t1_c2	5	NULL	#	20.00	100.00	100.00	Using where; Using index
+1	PRIMARY	a	index	t1_c2	t1_c2	10	NULL	#	16.00	20.00	25.00	Using where; Using index; LooseScan
+1	PRIMARY	t1	ref	t1_c2	t1_c2	5	test.a.c2	#	5.00	5.00	100.00	
 select * from t1;
 c1	c2	c3
 1	1	1
@@ -5891,7 +5838,7 @@ id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 analyze delete from t1 where c1 in (select a.c2 from t1 a where a.c2 = t1.c3) limit 1;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	r_rows	filtered	r_filtered	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	27.00	100.00	14.81	Using where
-1	PRIMARY	a	ref	t1_c2	t1_c2	5	test.t1.c1	5	0.25	100.00	100.00	Using index; FirstMatch(t1)
+1	PRIMARY	a	ref	t1_c2	t1_c2	5	test.t1.c1	5	0.25	18.75	100.00	Using index; FirstMatch(t1)
 select * from t1;
 c1	c2	c3
 1	2	2
@@ -6355,8 +6302,7 @@ and c1 = 2
 and exists (select 'X' from v1 a where a.c1 = v1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ref	t1_c2	t1_c2	10	const,const	#	Using where
-1	PRIMARY	<subquery3>	eq_ref	distinct_key	distinct_key	4	func	#	
-3	MATERIALIZED	t1	ref	t1_c2	t1_c2	10	const,const	#	Using index
+1	PRIMARY	t1	ref	t1_c2	t1_c2	10	const,const	#	Using index; FirstMatch(t1)
 2	DEPENDENT SUBQUERY	a	ALL	NULL	NULL	NULL	NULL	#	Using where
 explain delete from v1 where v1.c2 in (select max(a.c2) from t1 a where a.c3 = v1.c3)
 and c1 = 2
@@ -6472,18 +6418,15 @@ create table tmp as select * from t1 where c1 = 1 and exists (select 'X' from t1
 explain select * from t1 where c1 = 1 and exists (select 'X' from t1 a where a.c1 = t1.c2);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	ALL	NULL	NULL	NULL	NULL	32	
+1	PRIMARY	a	ALL	NULL	NULL	NULL	NULL	32	Using where; FirstMatch(t1); Using join buffer (flat, BNL join)
 explain delete from t1 where c1 = 1 and exists (select 'X' from t1 a where a.c1 = t1.c2);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	ALL	NULL	NULL	NULL	NULL	32	
+1	PRIMARY	a	ALL	NULL	NULL	NULL	NULL	32	Using where; FirstMatch(t1)
 analyze delete from t1 where c1 = 1 and exists (select 'X' from t1 a where a.c1 = t1.c2);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	r_rows	filtered	r_filtered	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	32.00	9.38	9.38	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	0.67	100.00	100.00	
-2	MATERIALIZED	a	ALL	NULL	NULL	NULL	NULL	32	32.00	100.00	100.00	
+1	PRIMARY	a	ALL	NULL	NULL	NULL	NULL	32	13.67	100.00	4.88	Using where; FirstMatch(t1)
 select * from t1;
 c1	c2	c3
 1	3	3
@@ -6530,13 +6473,11 @@ create table tmp as select * from t1 where exists (select 'X' from t1 a where a.
 explain select * from t1 where exists (select 'X' from t1 a where a.c2 = t1.c2) and c2 = 3;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	ALL	NULL	NULL	NULL	NULL	32	Using where
+1	PRIMARY	a	ALL	NULL	NULL	NULL	NULL	32	Using where; FirstMatch(t1); Using join buffer (flat, BNL join)
 explain delete from t1 where exists (select 'X' from t1 a where a.c2 = t1.c2) and c2 = 3;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	ALL	NULL	NULL	NULL	NULL	32	Using where
+1	PRIMARY	a	ALL	NULL	NULL	NULL	NULL	32	Using where; FirstMatch(t1)
 delete from t1 where exists (select 'X' from t1 a where a.c2 = t1.c2) and c2 = 3;
 affected rows: 8
 select * from t1;
@@ -6667,7 +6608,7 @@ id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 analyze delete from t1 where c1 in (select a.c2 from t1 a where a.c2 = t1.c3) limit 1;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	r_rows	filtered	r_filtered	Extra
 1	PRIMARY	a	ALL	NULL	NULL	NULL	NULL	32	4.00	100.00	100.00	Using where; Start temporary
-1	PRIMARY	t1	eq_ref	PRIMARY	PRIMARY	4	test.a.c2	1	1.00	100.00	25.00	Using where; End temporary
+1	PRIMARY	t1	eq_ref	PRIMARY	PRIMARY	4	test.a.c2	1	1.00	3.12	25.00	Using where; End temporary
 select * from t1;
 c1	c2	c3
 1	2	2
@@ -7131,22 +7072,21 @@ and c1 = 2
 and exists (select 'X' from v1 a where a.c1 = v1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	#	Using where
-1	PRIMARY	<subquery3>	eq_ref	distinct_key	distinct_key	4	func	#	
-3	MATERIALIZED	t1	ALL	NULL	NULL	NULL	NULL	#	Using where
+1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	#	Using where; FirstMatch(t1); Using join buffer (flat, BNL join)
 2	DEPENDENT SUBQUERY	a	eq_ref	PRIMARY	PRIMARY	4	test.t1.c3	#	
 explain delete from v1 where v1.c2 in (select max(a.c2) from t1 a where a.c3 = v1.c3)
 and c1 = 2
 and exists (select 'X' from v1 a where a.c1 = v1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	#	Using where
-3	MATERIALIZED	t1	ALL	NULL	NULL	NULL	NULL	#	Using where
+3	DEPENDENT SUBQUERY	t1	ALL	NULL	NULL	NULL	NULL	#	Using where
 2	DEPENDENT SUBQUERY	a	eq_ref	PRIMARY	PRIMARY	4	test.t1.c3	#	
 analyze delete from v1 where v1.c2 in (select max(a.c2) from t1 a where a.c3 = v1.c3)
 and c1 = 2
 and exists (select 'X' from v1 a where a.c1 = v1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	r_rows	filtered	r_filtered	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	#	32.00	3.91	3.12	Using where
-3	MATERIALIZED	t1	ALL	NULL	NULL	NULL	NULL	#	32.00	25.00	25.00	Using where
+3	DEPENDENT SUBQUERY	t1	ALL	NULL	NULL	NULL	NULL	#	6.00	25.00	16.67	Using where
 2	DEPENDENT SUBQUERY	a	eq_ref	PRIMARY	PRIMARY	4	test.t1.c3	#	1.00	100.00	100.00	
 select * from t1;
 c1	c2	c3
@@ -7341,13 +7281,11 @@ create table tmp as select * from t1 where c1 = 1 and exists (select 'X' from t1
 explain select * from t1 where c1 = 1 and exists (select 'X' from t1 a where a.c1 = t1.c2);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	ALL	NULL	NULL	NULL	NULL	32	
+1	PRIMARY	a	ALL	NULL	NULL	NULL	NULL	32	Using where; FirstMatch(t1); Using join buffer (flat, BNL join)
 explain delete from t1 where c1 = 1 and exists (select 'X' from t1 a where a.c1 = t1.c2);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	ALL	NULL	NULL	NULL	NULL	32	
+1	PRIMARY	a	ALL	NULL	NULL	NULL	NULL	32	Using where; FirstMatch(t1)
 delete from t1 where c1 = 1 and exists (select 'X' from t1 a where a.c1 = t1.c2);
 affected rows: 2
 select * from t1;
@@ -7396,13 +7334,11 @@ create table tmp as select * from t1 where exists (select 'X' from t1 a where a.
 explain select * from t1 where exists (select 'X' from t1 a where a.c2 = t1.c2) and c2 = 3;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	ALL	NULL	NULL	NULL	NULL	32	Using where
+1	PRIMARY	a	ALL	NULL	NULL	NULL	NULL	32	Using where; FirstMatch(t1); Using join buffer (flat, BNL join)
 explain delete from t1 where exists (select 'X' from t1 a where a.c2 = t1.c2) and c2 = 3;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	ALL	NULL	NULL	NULL	NULL	32	Using where
+1	PRIMARY	a	ALL	NULL	NULL	NULL	NULL	32	Using where; FirstMatch(t1)
 delete from t1 where exists (select 'X' from t1 a where a.c2 = t1.c2) and c2 = 3;
 affected rows: 8
 select * from t1;
@@ -7990,15 +7926,14 @@ and c1 = 2
 and exists (select 'X' from v1 a where a.c1 = v1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery3>	eq_ref	distinct_key	distinct_key	4	func	1	
-3	MATERIALIZED	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
+1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where; FirstMatch(t1); Using join buffer (flat, BNL join)
 2	DEPENDENT SUBQUERY	a	ALL	NULL	NULL	NULL	NULL	32	Using where
 explain delete from v1 where v1.c2 in (select max(a.c2) from t1 a where a.c3 = v1.c3)
 and c1 = 2
 and exists (select 'X' from v1 a where a.c1 = v1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-3	MATERIALIZED	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
+3	DEPENDENT SUBQUERY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
 2	DEPENDENT SUBQUERY	a	ALL	NULL	NULL	NULL	NULL	32	Using where
 delete from v1 where v1.c2 in (select max(a.c2) from t1 a where a.c3 = v1.c3)
 and c1 = 2
@@ -8101,13 +8036,11 @@ create table tmp as select * from t1 where c1 = 1 and exists (select 'X' from t1
 explain select * from t1 where c1 = 1 and exists (select 'X' from t1 a where a.c1 = t1.c2);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	ALL	NULL	NULL	NULL	NULL	32	
+1	PRIMARY	a	ALL	NULL	NULL	NULL	NULL	32	Using where; FirstMatch(t1); Using join buffer (flat, BNL join)
 explain delete from t1 where c1 = 1 and exists (select 'X' from t1 a where a.c1 = t1.c2);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	ALL	NULL	NULL	NULL	NULL	32	
+1	PRIMARY	a	ALL	NULL	NULL	NULL	NULL	32	Using where; FirstMatch(t1)
 delete from t1 where c1 = 1 and exists (select 'X' from t1 a where a.c1 = t1.c2);
 affected rows: 2
 select * from t1;
@@ -8155,13 +8088,11 @@ create table tmp as select * from t1 where exists (select 'X' from t1 a where a.
 explain select * from t1 where exists (select 'X' from t1 a where a.c2 = t1.c2) and c2 = 3;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	ALL	t1_c2	NULL	NULL	NULL	32	Using where
+1	PRIMARY	a	ALL	t1_c2	NULL	NULL	NULL	32	Using where; FirstMatch(t1); Using join buffer (flat, BNL join)
 explain delete from t1 where exists (select 'X' from t1 a where a.c2 = t1.c2) and c2 = 3;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	ALL	t1_c2	NULL	NULL	NULL	32	Using where
+1	PRIMARY	a	ALL	t1_c2	NULL	NULL	NULL	32	Using where; FirstMatch(t1)
 delete from t1 where exists (select 'X' from t1 a where a.c2 = t1.c2) and c2 = 3;
 affected rows: 8
 select * from t1;
@@ -8746,8 +8677,7 @@ and c1 = 2
 and exists (select 'X' from v1 a where a.c1 = v1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ref	t1_c2	t1_c2	10	const,const	2	Using where
-1	PRIMARY	<subquery3>	eq_ref	distinct_key	distinct_key	4	func	1	
-3	MATERIALIZED	t1	ref	t1_c2	t1_c2	10	const,const	2	
+1	PRIMARY	t1	ref	t1_c2	t1_c2	10	const,const	2	FirstMatch(t1)
 2	DEPENDENT SUBQUERY	a	ALL	NULL	NULL	NULL	NULL	32	Using where
 explain delete from v1 where v1.c2 in (select max(a.c2) from t1 a where a.c3 = v1.c3)
 and c1 = 2
@@ -8860,13 +8790,11 @@ create table tmp as select * from t1 where c1 = 1 and exists (select 'X' from t1
 explain select * from t1 where c1 = 1 and exists (select 'X' from t1 a where a.c1 = t1.c2);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	ALL	NULL	NULL	NULL	NULL	32	
+1	PRIMARY	a	ALL	NULL	NULL	NULL	NULL	32	Using where; FirstMatch(t1); Using join buffer (flat, BNL join)
 explain delete from t1 where c1 = 1 and exists (select 'X' from t1 a where a.c1 = t1.c2);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	ALL	NULL	NULL	NULL	NULL	32	
+1	PRIMARY	a	ALL	NULL	NULL	NULL	NULL	32	Using where; FirstMatch(t1)
 delete from t1 where c1 = 1 and exists (select 'X' from t1 a where a.c1 = t1.c2);
 affected rows: 2
 select * from t1;
@@ -8915,13 +8843,11 @@ create table tmp as select * from t1 where exists (select 'X' from t1 a where a.
 explain select * from t1 where exists (select 'X' from t1 a where a.c2 = t1.c2) and c2 = 3;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	ALL	NULL	NULL	NULL	NULL	32	Using where
+1	PRIMARY	a	ALL	NULL	NULL	NULL	NULL	32	Using where; FirstMatch(t1); Using join buffer (flat, BNL join)
 explain delete from t1 where exists (select 'X' from t1 a where a.c2 = t1.c2) and c2 = 3;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	ALL	NULL	NULL	NULL	NULL	32	Using where
+1	PRIMARY	a	ALL	NULL	NULL	NULL	NULL	32	Using where; FirstMatch(t1)
 delete from t1 where exists (select 'X' from t1 a where a.c2 = t1.c2) and c2 = 3;
 affected rows: 8
 select * from t1;
@@ -9509,15 +9435,14 @@ and c1 = 2
 and exists (select 'X' from v1 a where a.c1 = v1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery3>	eq_ref	distinct_key	distinct_key	4	func	1	
-3	MATERIALIZED	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
+1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where; FirstMatch(t1); Using join buffer (flat, BNL join)
 2	DEPENDENT SUBQUERY	a	eq_ref	PRIMARY	PRIMARY	4	test.t1.c3	1	
 explain delete from v1 where v1.c2 in (select max(a.c2) from t1 a where a.c3 = v1.c3)
 and c1 = 2
 and exists (select 'X' from v1 a where a.c1 = v1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-3	MATERIALIZED	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
+3	DEPENDENT SUBQUERY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
 2	DEPENDENT SUBQUERY	a	eq_ref	PRIMARY	PRIMARY	4	test.t1.c3	1	
 delete from v1 where v1.c2 in (select max(a.c2) from t1 a where a.c3 = v1.c3)
 and c1 = 2

@@ -587,20 +587,27 @@ update orders set o_totalprice = o_totalprice+50 where $c11;
 eval
 select o_orderkey, o_totalprice from orders where $c11;
 
+CREATE TABLE partsupp_small (
+  ps_partkey int(11) NOT NULL DEFAULT '0',
+  ps_suppkey int(11) NOT NULL DEFAULT '0',
+  ps_availqty int(11) DEFAULT NULL,
+  ps_supplycost double DEFAULT NULL,
+  ps_comment varchar(199) DEFAULT NULL,
+  PRIMARY KEY (ps_partkey,ps_suppkey),
+  KEY i_ps_partkey (ps_partkey),
+  KEY i_ps_suppkey (ps_suppkey)
+);
+
+create index i_ps_sup_part on partsupp_small(ps_suppkey, ps_partkey);
+insert into partsupp_small select * from partsupp where ps_partkey <50;
+analyze table partsupp_small  persistent for all;
+
 --echo # LooseScan
 --echo # =========
 
-set @tmp_optimizer_switch= @@optimizer_switch;
-set optimizer_switch='materialization=off';
-
-create index i_l_sup_part on lineitem(l_suppkey, l_partkey);
-create index i_ps_sup_part on partsupp(ps_suppkey, ps_partkey);
-
-analyze table lineitem;
-analyze table partsupp;
-
 let $c12 = l_suppkey in
-        (select ps_suppkey from partsupp where ps_partkey in (1,2,3));
+                (select ps_suppkey from partsupp_small
+                        where ps_partkey in (1,2,3));
 
 eval
 explain
@@ -700,11 +707,6 @@ select  ROUND(sum(l_extendedprice),2), $l_count as count,
         $l_old_sum as old_sum from lineitem where $c12;
 
 drop procedure p;
-set @@optimizer_switch=@tmp_optimizer_switch;
-
-drop index i_l_sup_part on lineitem;
-drop index i_ps_sup_part on partsupp;
-
 
 --echo # DuplicateWeedout
 --echo # ================
@@ -717,7 +719,7 @@ analyze table orders;
 
 let $c13 = l_partkey in (
    select ps_partkey
-   from partsupp join lineitem on ps_partkey=l_partkey
+   from partsupp_small join lineitem on ps_partkey=l_partkey
    where ps_suppkey in (
     select s_suppkey from supplier  where  s_suppkey < 2
   )
@@ -824,5 +826,7 @@ select  ROUND(sum(l_extendedprice),2), $l_count as count,
 
 drop procedure p;
 set @@optimizer_switch=@tmp_optimizer_switch;
+
+drop table partsupp_small;
 
 DROP DATABASE dbt3_s001;

@@ -96,14 +96,12 @@ explain select * from t1 where c1 <2
 and exists (select 'X' from t1 a where a.c1 = t1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	ALL	NULL	NULL	NULL	NULL	32	
+1	PRIMARY	a	ALL	NULL	NULL	NULL	NULL	32	Using where; FirstMatch(t1); Using join buffer (flat, BNL join)
 explain update t1 set c1=10 where c1 <2
 and exists (select 'X' from t1 a where a.c1 = t1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	ALL	NULL	NULL	NULL	NULL	32	
+1	PRIMARY	a	ALL	NULL	NULL	NULL	NULL	32	Using where; FirstMatch(t1)
 update t1 set c1=10 where c1 <2
 and exists (select 'X' from t1 a where a.c1 = t1.c1);
 affected rows: 3
@@ -155,16 +153,6 @@ test.t1	analyze	status	Engine-independent statistics collected
 test.t1	analyze	status	OK
 explain select * from t1 where exists (select 'X' from t1 a where a.c2 = t1.c2) and c2 >= 3;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
-<<<<<<< HEAD
-1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	8	Using where
-1	PRIMARY	a	ALL	NULL	NULL	NULL	NULL	8	Using where; FirstMatch(t1)
-start transaction;
-||||||| parent of 190e3140156 (MDEV-29390: Improve coverage for UPDATE and DELETE statements in MTR test suites)
-1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	8	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	ALL	NULL	NULL	NULL	NULL	8	
-start transaction;
-=======
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
 1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
 2	MATERIALIZED	a	ALL	NULL	NULL	NULL	NULL	32	
@@ -173,7 +161,6 @@ id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
 1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
 2	MATERIALIZED	a	ALL	NULL	NULL	NULL	NULL	32	
->>>>>>> 190e3140156 (MDEV-29390: Improve coverage for UPDATE and DELETE statements in MTR test suites)
 update t1 set c1=c1+10 where exists (select 'X' from t1 a where a.c2 = t1.c2) and c2 >= 3;
 affected rows: 20
 info: Rows matched: 20  Changed: 20  Warnings: 0
@@ -398,8 +385,7 @@ explain select * from v1 where c1 <2
 and exists (select 'X' from v1 a where a.c1 = v1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
+1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where; FirstMatch(t1); Using join buffer (flat, BNL join)
 explain update v1 set c1=c1 + 1 where c1 <2
 and exists (select 'X' from v1 a where a.c1 = v1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
@@ -456,14 +442,13 @@ test.t1	analyze	status	OK
 explain select * from v1 where c1 <10 and exists (select 'X' from v1 a where a.c2 = v1.c2);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
+1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where; FirstMatch(t1); Using join buffer (flat, BNL join)
 explain update v1
 set c1=(select max(a.c1)+10 from v1 a where a.c1 = v1.c1)
 where c1 <10 and exists (select 'X' from v1 a where a.c2 = v1.c2);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-3	MATERIALIZED	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
+3	DEPENDENT SUBQUERY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
 2	DEPENDENT SUBQUERY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
 update v1
 set c1=(select max(a.c1)+10 from v1 a where a.c1 = v1.c1)
@@ -747,14 +732,12 @@ explain select * from t1 where c1 <2
 and exists (select 'X' from t1 a where a.c1 = t1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	index	NULL	t1_c2	10	NULL	32	Using index
+1	PRIMARY	a	index	NULL	t1_c2	10	NULL	32	Using where; Using index; FirstMatch(t1); Using join buffer (flat, BNL join)
 explain update t1 set c1=10 where c1 <2
 and exists (select 'X' from t1 a where a.c1 = t1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	index	NULL	t1_c2	10	NULL	32	Using index
+1	PRIMARY	a	index	NULL	t1_c2	10	NULL	32	Using where; Using index; FirstMatch(t1)
 update t1 set c1=10 where c1 <2
 and exists (select 'X' from t1 a where a.c1 = t1.c1);
 affected rows: 3
@@ -806,25 +789,12 @@ test.t1	analyze	status	Engine-independent statistics collected
 test.t1	analyze	status	OK
 explain select * from t1 where exists (select 'X' from t1 a where a.c2 = t1.c2) and c2 >= 3;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
-<<<<<<< HEAD
-1	PRIMARY	t1	range	t1_c2	t1_c2	5	NULL	2	Using index condition
-1	PRIMARY	a	ref	t1_c2	t1_c2	5	test.t1.c2	8	Using index; FirstMatch(t1)
-start transaction;
-||||||| parent of 190e3140156 (MDEV-29390: Improve coverage for UPDATE and DELETE statements in MTR test suites)
-1	PRIMARY	t1	range	t1_c2	t1_c2	5	NULL	2	Using index condition
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	range	t1_c2	t1_c2	5	NULL	2	Using where; Using index
-start transaction;
-=======
 1	PRIMARY	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	range	t1_c2	t1_c2	5	NULL	20	Using where; Using index
+1	PRIMARY	a	ref	t1_c2	t1_c2	5	test.t1.c2	5	Using index; FirstMatch(t1)
 explain update t1 set c1=c1+10 where exists (select 'X' from t1 a where a.c2 = t1.c2) and c2 >= 3;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	range	t1_c2	t1_c2	5	NULL	20	Using where; Using index
->>>>>>> 190e3140156 (MDEV-29390: Improve coverage for UPDATE and DELETE statements in MTR test suites)
+1	PRIMARY	a	ref	t1_c2	t1_c2	5	test.t1.c2	5	Using index; FirstMatch(t1)
 update t1 set c1=c1+10 where exists (select 'X' from t1 a where a.c2 = t1.c2) and c2 >= 3;
 affected rows: 20
 info: Rows matched: 20  Changed: 20  Warnings: 0
@@ -876,14 +846,12 @@ explain select * from t1 where exists (select 'X' from t1 a where a.c2 = t1.c2)
 and c2 >= 3 order by c2;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where; Using filesort
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	range	t1_c2	t1_c2	5	NULL	20	Using where; Using index
+1	PRIMARY	a	ref	t1_c2	t1_c2	5	test.t1.c2	5	Using index; FirstMatch(t1)
 explain update t1 set c1=c1+10 where exists (select 'X' from t1 a where a.c2 = t1.c2)
 and c2 >= 3 order by c2;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where; Using filesort
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	range	t1_c2	t1_c2	5	NULL	20	Using where; Using index
+1	PRIMARY	a	ref	t1_c2	t1_c2	5	test.t1.c2	5	Using index; FirstMatch(t1)
 update t1 set c1=c1+10 where exists (select 'X' from t1 a where a.c2 = t1.c2)
 and c2 >= 3 order by c2;
 affected rows: 20
@@ -991,11 +959,11 @@ test.t1	analyze	status	Engine-independent statistics collected
 test.t1	analyze	status	OK
 explain select * from v1;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
-1	SIMPLE	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where
+1	SIMPLE	t1	ref	t1_c2	t1_c2	5	const	8	
 explain update v1 set c1=c1 + (select max(a.c2) from t1 a
 where a.c1 = v1.c1) +10 where c3 > 3;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
-1	PRIMARY	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where
+1	PRIMARY	t1	ref	t1_c2	t1_c2	5	const	8	Using where
 2	DEPENDENT SUBQUERY	a	index	NULL	t1_c2	10	NULL	32	Using where; Using index
 update v1 set c1=c1 + (select max(a.c2) from t1 a
 where a.c1 = v1.c1) +10 where c3 > 3;
@@ -1049,8 +1017,7 @@ explain select * from v1 where c1 <2
 and exists (select 'X' from v1 a where a.c1 = v1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	range	t1_c2	t1_c2	10	NULL	1	Using index condition
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	t1	ref	t1_c2	t1_c2	5	const	8	Using index
+1	PRIMARY	t1	ref	t1_c2	t1_c2	10	const,test.t1.c1	1	Using index; FirstMatch(t1)
 explain update v1 set c1=c1 + 1 where c1 <2
 and exists (select 'X' from v1 a where a.c1 = v1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
@@ -1107,14 +1074,13 @@ test.t1	analyze	status	OK
 explain select * from v1 where c1 <10 and exists (select 'X' from v1 a where a.c2 = v1.c2);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	range	t1_c2	t1_c2	10	NULL	2	Using index condition
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	t1	ref	t1_c2	t1_c2	5	const	8	Using index
+1	PRIMARY	t1	ref	t1_c2	t1_c2	5	const	8	Using index; FirstMatch(t1)
 explain update v1
 set c1=(select max(a.c1)+10 from v1 a where a.c1 = v1.c1)
 where c1 <10 and exists (select 'X' from v1 a where a.c2 = v1.c2);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	range	t1_c2	t1_c2	10	NULL	2	Using index condition
-3	MATERIALIZED	t1	ref	t1_c2	t1_c2	5	const	8	Using index
+3	DEPENDENT SUBQUERY	t1	ref	t1_c2	t1_c2	5	const	8	Using where; Using index
 2	DEPENDENT SUBQUERY	t1	ref	t1_c2	t1_c2	10	const,test.t1.c1	1	Using index
 update v1
 set c1=(select max(a.c1)+10 from v1 a where a.c1 = v1.c1)
@@ -1398,14 +1364,12 @@ explain select * from t1 where c1 <2
 and exists (select 'X' from t1 a where a.c1 = t1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	index	NULL	t1_c2	10	NULL	32	Using index
+1	PRIMARY	a	index	NULL	t1_c2	10	NULL	32	Using where; Using index; FirstMatch(t1); Using join buffer (flat, BNL join)
 explain update t1 set c1=10 where c1 <2
 and exists (select 'X' from t1 a where a.c1 = t1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	index	NULL	t1_c2	10	NULL	32	Using index
+1	PRIMARY	a	index	NULL	t1_c2	10	NULL	32	Using where; Using index; FirstMatch(t1)
 update t1 set c1=10 where c1 <2
 and exists (select 'X' from t1 a where a.c1 = t1.c1);
 affected rows: 3
@@ -1458,13 +1422,11 @@ test.t1	analyze	status	OK
 explain select * from t1 where exists (select 'X' from t1 a where a.c2 = t1.c2) and c2 >= 3;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	range	t1_c2	t1_c2	5	NULL	20	Using where; Using index
+1	PRIMARY	a	ref	t1_c2	t1_c2	5	test.t1.c2	5	Using index; FirstMatch(t1)
 explain update t1 set c1=c1+10 where exists (select 'X' from t1 a where a.c2 = t1.c2) and c2 >= 3;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	range	t1_c2	t1_c2	5	NULL	20	Using where; Using index
+1	PRIMARY	a	ref	t1_c2	t1_c2	5	test.t1.c2	5	Using index; FirstMatch(t1)
 update t1 set c1=c1+10 where exists (select 'X' from t1 a where a.c2 = t1.c2) and c2 >= 3;
 affected rows: 20
 info: Rows matched: 20  Changed: 20  Warnings: 0
@@ -1516,14 +1478,12 @@ explain select * from t1 where exists (select 'X' from t1 a where a.c2 = t1.c2)
 and c2 >= 3 order by c2;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where; Using filesort
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	range	t1_c2	t1_c2	5	NULL	20	Using where; Using index
+1	PRIMARY	a	ref	t1_c2	t1_c2	5	test.t1.c2	5	Using index; FirstMatch(t1)
 explain update t1 set c1=c1+10 where exists (select 'X' from t1 a where a.c2 = t1.c2)
 and c2 >= 3 order by c2;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where; Using filesort
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	range	t1_c2	t1_c2	5	NULL	20	Using where; Using index
+1	PRIMARY	a	ref	t1_c2	t1_c2	5	test.t1.c2	5	Using index; FirstMatch(t1)
 update t1 set c1=c1+10 where exists (select 'X' from t1 a where a.c2 = t1.c2)
 and c2 >= 3 order by c2;
 affected rows: 20
@@ -1631,11 +1591,11 @@ test.t1	analyze	status	Engine-independent statistics collected
 test.t1	analyze	status	OK
 explain select * from v1;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
-1	SIMPLE	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where
+1	SIMPLE	t1	ref	t1_c2	t1_c2	5	const	8	
 explain update v1 set c1=c1 + (select max(a.c2) from t1 a
 where a.c1 = v1.c1) +10 where c3 > 3;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
-1	PRIMARY	t1	ALL	t1_c2,t1_c3	NULL	NULL	NULL	32	Using where
+1	PRIMARY	t1	ref	t1_c2,t1_c3	t1_c2	5	const	8	Using where
 2	DEPENDENT SUBQUERY	a	index	NULL	t1_c2	10	NULL	32	Using where; Using index
 update v1 set c1=c1 + (select max(a.c2) from t1 a
 where a.c1 = v1.c1) +10 where c3 > 3;
@@ -1689,8 +1649,7 @@ explain select * from v1 where c1 <2
 and exists (select 'X' from v1 a where a.c1 = v1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	range	t1_c2	t1_c2	10	NULL	1	Using index condition
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	t1	ref	t1_c2	t1_c2	5	const	8	Using index
+1	PRIMARY	t1	ref	t1_c2	t1_c2	10	const,test.t1.c1	1	Using index; FirstMatch(t1)
 explain update v1 set c1=c1 + 1 where c1 <2
 and exists (select 'X' from v1 a where a.c1 = v1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
@@ -1747,14 +1706,13 @@ test.t1	analyze	status	OK
 explain select * from v1 where c1 <10 and exists (select 'X' from v1 a where a.c2 = v1.c2);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	range	t1_c2	t1_c2	10	NULL	2	Using index condition
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	t1	ref	t1_c2	t1_c2	5	const	8	Using index
+1	PRIMARY	t1	ref	t1_c2	t1_c2	5	const	8	Using index; FirstMatch(t1)
 explain update v1
 set c1=(select max(a.c1)+10 from v1 a where a.c1 = v1.c1)
 where c1 <10 and exists (select 'X' from v1 a where a.c2 = v1.c2);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	range	t1_c2	t1_c2	10	NULL	2	Using index condition
-3	MATERIALIZED	t1	ref	t1_c2	t1_c2	5	const	8	Using index
+3	DEPENDENT SUBQUERY	t1	ref	t1_c2	t1_c2	5	const	8	Using where; Using index
 2	DEPENDENT SUBQUERY	t1	ref	t1_c2	t1_c2	10	const,test.t1.c1	1	Using index
 update v1
 set c1=(select max(a.c1)+10 from v1 a where a.c1 = v1.c1)
@@ -1917,12 +1875,12 @@ test.t1	analyze	status	Engine-independent statistics collected
 test.t1	analyze	status	OK
 explain select * from t1 order by c3 desc limit 2;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
-1	SIMPLE	t1	ALL	NULL	NULL	NULL	NULL	32	Using filesort
+1	SIMPLE	t1	index	NULL	t1_c3	5	NULL	2	
 explain update t1
 set c1=(select a.c3 from t1 a where a.c3 = t1.c3)
 order by c3 desc limit 2;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
-1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using filesort
+1	PRIMARY	t1	index	NULL	t1_c3	5	NULL	2	Using buffer
 2	DEPENDENT SUBQUERY	a	ref	t1_c3	t1_c3	5	test.t1.c3	1	Using index
 update t1
 set c1=(select a.c3 from t1 a where a.c3 = t1.c3)
@@ -1986,7 +1944,7 @@ id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 explain update t1 set c1=(select a.c3 from t1 a where a.c3 = t1.c3);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	
-2	DEPENDENT SUBQUERY	a	eq_ref	PRIMARY	PRIMARY	4	test.t1.c3	1	Using index
+2	DEPENDENT SUBQUERY	a	eq_ref	PRIMARY	PRIMARY	4	test.t1.c3	1	
 update t1 set c1=(select a.c3 from t1 a where a.c3 = t1.c3);
 affected rows: 32
 info: Rows matched: 32  Changed: 32  Warnings: 0
@@ -2039,14 +1997,12 @@ explain select * from t1 where c1 <2
 and exists (select 'X' from t1 a where a.c1 = t1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	index	NULL	t1_c2	10	NULL	32	Using index
+1	PRIMARY	a	index	NULL	t1_c2	10	NULL	32	Using where; Using index; FirstMatch(t1); Using join buffer (flat, BNL join)
 explain update t1 set c1=10 where c1 <2
 and exists (select 'X' from t1 a where a.c1 = t1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	index	NULL	t1_c2	10	NULL	32	Using index
+1	PRIMARY	a	index	NULL	t1_c2	10	NULL	32	Using where; Using index; FirstMatch(t1)
 update t1 set c1=10 where c1 <2
 and exists (select 'X' from t1 a where a.c1 = t1.c1);
 affected rows: 3
@@ -2098,25 +2054,12 @@ test.t1	analyze	status	Engine-independent statistics collected
 test.t1	analyze	status	OK
 explain select * from t1 where exists (select 'X' from t1 a where a.c2 = t1.c2) and c2 >= 3;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
-<<<<<<< HEAD
-1	PRIMARY	a	index	t1_c2	t1_c2	10	NULL	8	Using where; Using index; LooseScan
-1	PRIMARY	t1	ref	t1_c2	t1_c2	5	test.a.c2	1	
-start transaction;
-||||||| parent of 190e3140156 (MDEV-29390: Improve coverage for UPDATE and DELETE statements in MTR test suites)
-1	PRIMARY	t1	range	t1_c2	t1_c2	5	NULL	2	Using index condition
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	range	t1_c2	t1_c2	5	NULL	2	Using where; Using index
-start transaction;
-=======
 1	PRIMARY	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	range	t1_c2	t1_c2	5	NULL	20	Using where; Using index
+1	PRIMARY	a	ref	t1_c2	t1_c2	5	test.t1.c2	5	Using index; FirstMatch(t1)
 explain update t1 set c1=c1+10 where exists (select 'X' from t1 a where a.c2 = t1.c2) and c2 >= 3;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	range	t1_c2	t1_c2	5	NULL	20	Using where; Using index
->>>>>>> 190e3140156 (MDEV-29390: Improve coverage for UPDATE and DELETE statements in MTR test suites)
+1	PRIMARY	a	ref	t1_c2	t1_c2	5	test.t1.c2	5	Using index; FirstMatch(t1)
 update t1 set c1=c1+10 where exists (select 'X' from t1 a where a.c2 = t1.c2) and c2 >= 3;
 affected rows: 20
 info: Rows matched: 20  Changed: 20  Warnings: 0
@@ -2168,14 +2111,12 @@ explain select * from t1 where exists (select 'X' from t1 a where a.c2 = t1.c2)
 and c2 >= 3 order by c2;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where; Using filesort
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	range	t1_c2	t1_c2	5	NULL	20	Using where; Using index
+1	PRIMARY	a	ref	t1_c2	t1_c2	5	test.t1.c2	5	Using index; FirstMatch(t1)
 explain update t1 set c1=c1+10 where exists (select 'X' from t1 a where a.c2 = t1.c2)
 and c2 >= 3 order by c2;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where; Using filesort
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	range	t1_c2	t1_c2	5	NULL	20	Using where; Using index
+1	PRIMARY	a	ref	t1_c2	t1_c2	5	test.t1.c2	5	Using index; FirstMatch(t1)
 update t1 set c1=c1+10 where exists (select 'X' from t1 a where a.c2 = t1.c2)
 and c2 >= 3 order by c2;
 affected rows: 20
@@ -2283,11 +2224,11 @@ test.t1	analyze	status	Engine-independent statistics collected
 test.t1	analyze	status	OK
 explain select * from v1;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
-1	SIMPLE	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where
+1	SIMPLE	t1	ref	t1_c2	t1_c2	5	const	8	
 explain update v1 set c1=c1 + (select max(a.c2) from t1 a
 where a.c1 = v1.c1) +10 where c3 > 3;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
-1	PRIMARY	t1	ref	PRIMARY,t1_c2	t1_c2	5	const	8	Using index condition
+1	PRIMARY	t1	range	PRIMARY,t1_c2	PRIMARY	4	NULL	29	Using where
 2	DEPENDENT SUBQUERY	a	index	NULL	t1_c2	10	NULL	32	Using where; Using index
 update v1 set c1=c1 + (select max(a.c2) from t1 a
 where a.c1 = v1.c1) +10 where c3 > 3;
@@ -2341,8 +2282,7 @@ explain select * from v1 where c1 <2
 and exists (select 'X' from v1 a where a.c1 = v1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	range	t1_c2	t1_c2	10	NULL	1	Using index condition
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	t1	ref	t1_c2	t1_c2	5	const	8	Using index
+1	PRIMARY	t1	ref	t1_c2	t1_c2	10	const,test.t1.c1	1	Using index; FirstMatch(t1)
 explain update v1 set c1=c1 + 1 where c1 <2
 and exists (select 'X' from v1 a where a.c1 = v1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
@@ -2399,14 +2339,13 @@ test.t1	analyze	status	OK
 explain select * from v1 where c1 <10 and exists (select 'X' from v1 a where a.c2 = v1.c2);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	range	t1_c2	t1_c2	10	NULL	2	Using index condition
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	t1	ref	t1_c2	t1_c2	5	const	8	Using index
+1	PRIMARY	t1	ref	t1_c2	t1_c2	5	const	8	Using index; FirstMatch(t1)
 explain update v1
 set c1=(select max(a.c1)+10 from v1 a where a.c1 = v1.c1)
 where c1 <10 and exists (select 'X' from v1 a where a.c2 = v1.c2);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	range	t1_c2	t1_c2	10	NULL	2	Using index condition
-3	MATERIALIZED	t1	ref	t1_c2	t1_c2	5	const	8	Using index
+3	DEPENDENT SUBQUERY	t1	ref	t1_c2	t1_c2	5	const	8	Using where; Using index
 2	DEPENDENT SUBQUERY	t1	ref	t1_c2	t1_c2	10	const,test.t1.c1	1	Using index
 update v1
 set c1=(select max(a.c1)+10 from v1 a where a.c1 = v1.c1)
@@ -2518,7 +2457,7 @@ explain update t1
 set c1=(select a.c3 from t1 a where a.c3 = t1.c3) limit 2;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	
-2	DEPENDENT SUBQUERY	a	eq_ref	PRIMARY	PRIMARY	4	test.t1.c3	1	Using index
+2	DEPENDENT SUBQUERY	a	eq_ref	PRIMARY	PRIMARY	4	test.t1.c3	1	
 update t1
 set c1=(select a.c3 from t1 a where a.c3 = t1.c3) limit 2;
 affected rows: 2
@@ -2575,7 +2514,7 @@ set c1=(select a.c3 from t1 a where a.c3 = t1.c3)
 order by c3 desc limit 2;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	index	NULL	PRIMARY	4	NULL	2	Using buffer
-2	DEPENDENT SUBQUERY	a	eq_ref	PRIMARY	PRIMARY	4	test.t1.c3	1	Using index
+2	DEPENDENT SUBQUERY	a	eq_ref	PRIMARY	PRIMARY	4	test.t1.c3	1	
 update t1
 set c1=(select a.c3 from t1 a where a.c3 = t1.c3)
 order by c3 desc limit 2;
@@ -3326,14 +3265,12 @@ explain select * from t1 where c1 <2
 and exists (select 'X' from t1 a where a.c1 = t1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	ALL	NULL	NULL	NULL	NULL	32	
+1	PRIMARY	a	ALL	NULL	NULL	NULL	NULL	32	Using where; FirstMatch(t1); Using join buffer (flat, BNL join)
 explain update t1 set c1=10 where c1 <2
 and exists (select 'X' from t1 a where a.c1 = t1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	ALL	NULL	NULL	NULL	NULL	32	
+1	PRIMARY	a	ALL	NULL	NULL	NULL	NULL	32	Using where; FirstMatch(t1)
 update t1 set c1=10 where c1 <2
 and exists (select 'X' from t1 a where a.c1 = t1.c1);
 affected rows: 3
@@ -3617,8 +3554,7 @@ explain select * from v1 where c1 <2
 and exists (select 'X' from v1 a where a.c1 = v1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
+1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where; FirstMatch(t1); Using join buffer (flat, BNL join)
 explain update v1 set c1=c1 + 1 where c1 <2
 and exists (select 'X' from v1 a where a.c1 = v1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
@@ -3675,14 +3611,13 @@ test.t1	analyze	status	OK
 explain select * from v1 where c1 <10 and exists (select 'X' from v1 a where a.c2 = v1.c2);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
+1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where; FirstMatch(t1); Using join buffer (flat, BNL join)
 explain update v1
 set c1=(select max(a.c1)+10 from v1 a where a.c1 = v1.c1)
 where c1 <10 and exists (select 'X' from v1 a where a.c2 = v1.c2);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-3	MATERIALIZED	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
+3	DEPENDENT SUBQUERY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
 2	DEPENDENT SUBQUERY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
 update v1
 set c1=(select max(a.c1)+10 from v1 a where a.c1 = v1.c1)
@@ -3966,14 +3901,12 @@ explain select * from t1 where c1 <2
 and exists (select 'X' from t1 a where a.c1 = t1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	index	NULL	t1_c2	10	NULL	32	Using index
+1	PRIMARY	a	index	NULL	t1_c2	10	NULL	32	Using where; Using index; FirstMatch(t1); Using join buffer (flat, BNL join)
 explain update t1 set c1=10 where c1 <2
 and exists (select 'X' from t1 a where a.c1 = t1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	index	NULL	t1_c2	10	NULL	32	Using index
+1	PRIMARY	a	index	NULL	t1_c2	10	NULL	32	Using where; Using index; FirstMatch(t1)
 update t1 set c1=10 where c1 <2
 and exists (select 'X' from t1 a where a.c1 = t1.c1);
 affected rows: 3
@@ -4025,14 +3958,12 @@ test.t1	analyze	status	Engine-independent statistics collected
 test.t1	analyze	status	OK
 explain select * from t1 where exists (select 'X' from t1 a where a.c2 = t1.c2) and c2 >= 3;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
-1	PRIMARY	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	range	t1_c2	t1_c2	5	NULL	21	Using where; Using index
+1	PRIMARY	t1	range	t1_c2	t1_c2	5	NULL	21	Using index condition
+1	PRIMARY	a	ref	t1_c2	t1_c2	5	test.t1.c2	5	Using index; FirstMatch(t1)
 explain update t1 set c1=c1+10 where exists (select 'X' from t1 a where a.c2 = t1.c2) and c2 >= 3;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
-1	PRIMARY	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	range	t1_c2	t1_c2	5	NULL	21	Using where; Using index
+1	PRIMARY	t1	range	t1_c2	t1_c2	5	NULL	21	Using index condition
+1	PRIMARY	a	ref	t1_c2	t1_c2	5	test.t1.c2	5	Using index; FirstMatch(t1)
 update t1 set c1=c1+10 where exists (select 'X' from t1 a where a.c2 = t1.c2) and c2 >= 3;
 affected rows: 20
 info: Rows matched: 20  Changed: 20  Warnings: 0
@@ -4083,15 +4014,13 @@ test.t1	analyze	status	OK
 explain select * from t1 where exists (select 'X' from t1 a where a.c2 = t1.c2)
 and c2 >= 3 order by c2;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
-1	PRIMARY	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where; Using filesort
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	range	t1_c2	t1_c2	5	NULL	21	Using where; Using index
+1	PRIMARY	t1	range	t1_c2	t1_c2	5	NULL	21	Using index condition
+1	PRIMARY	a	ref	t1_c2	t1_c2	5	test.t1.c2	5	Using index; FirstMatch(t1)
 explain update t1 set c1=c1+10 where exists (select 'X' from t1 a where a.c2 = t1.c2)
 and c2 >= 3 order by c2;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
-1	PRIMARY	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where; Using filesort
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	range	t1_c2	t1_c2	5	NULL	21	Using where; Using index
+1	PRIMARY	t1	range	t1_c2	t1_c2	5	NULL	21	Using index condition
+1	PRIMARY	a	ref	t1_c2	t1_c2	5	test.t1.c2	5	Using index; FirstMatch(t1)
 update t1 set c1=c1+10 where exists (select 'X' from t1 a where a.c2 = t1.c2)
 and c2 >= 3 order by c2;
 affected rows: 20
@@ -4257,8 +4186,7 @@ explain select * from v1 where c1 <2
 and exists (select 'X' from v1 a where a.c1 = v1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	range	t1_c2	t1_c2	10	NULL	1	Using index condition
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	t1	ref	t1_c2	t1_c2	5	const	8	Using index
+1	PRIMARY	t1	ref	t1_c2	t1_c2	10	const,test.t1.c1	1	Using index; FirstMatch(t1)
 explain update v1 set c1=c1 + 1 where c1 <2
 and exists (select 'X' from v1 a where a.c1 = v1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
@@ -4315,14 +4243,13 @@ test.t1	analyze	status	OK
 explain select * from v1 where c1 <10 and exists (select 'X' from v1 a where a.c2 = v1.c2);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	range	t1_c2	t1_c2	10	NULL	2	Using index condition
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	t1	ref	t1_c2	t1_c2	5	const	8	Using index
+1	PRIMARY	t1	ref	t1_c2	t1_c2	5	const	8	Using index; FirstMatch(t1)
 explain update v1
 set c1=(select max(a.c1)+10 from v1 a where a.c1 = v1.c1)
 where c1 <10 and exists (select 'X' from v1 a where a.c2 = v1.c2);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	range	t1_c2	t1_c2	10	NULL	2	Using index condition
-3	MATERIALIZED	t1	ref	t1_c2	t1_c2	5	const	8	Using index
+3	DEPENDENT SUBQUERY	t1	ref	t1_c2	t1_c2	5	const	8	Using where; Using index
 2	DEPENDENT SUBQUERY	t1	ref	t1_c2	t1_c2	10	const,test.t1.c1	1	Using index
 update v1
 set c1=(select max(a.c1)+10 from v1 a where a.c1 = v1.c1)
@@ -4606,14 +4533,12 @@ explain select * from t1 where c1 <2
 and exists (select 'X' from t1 a where a.c1 = t1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	index	NULL	t1_c2	10	NULL	32	Using index
+1	PRIMARY	a	index	NULL	t1_c2	10	NULL	32	Using where; Using index; FirstMatch(t1); Using join buffer (flat, BNL join)
 explain update t1 set c1=10 where c1 <2
 and exists (select 'X' from t1 a where a.c1 = t1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	index	NULL	t1_c2	10	NULL	32	Using index
+1	PRIMARY	a	index	NULL	t1_c2	10	NULL	32	Using where; Using index; FirstMatch(t1)
 update t1 set c1=10 where c1 <2
 and exists (select 'X' from t1 a where a.c1 = t1.c1);
 affected rows: 3
@@ -4665,14 +4590,12 @@ test.t1	analyze	status	Engine-independent statistics collected
 test.t1	analyze	status	OK
 explain select * from t1 where exists (select 'X' from t1 a where a.c2 = t1.c2) and c2 >= 3;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
-1	PRIMARY	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	range	t1_c2	t1_c2	5	NULL	21	Using where; Using index
+1	PRIMARY	t1	range	t1_c2	t1_c2	5	NULL	21	Using index condition
+1	PRIMARY	a	ref	t1_c2	t1_c2	5	test.t1.c2	5	Using index; FirstMatch(t1)
 explain update t1 set c1=c1+10 where exists (select 'X' from t1 a where a.c2 = t1.c2) and c2 >= 3;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
-1	PRIMARY	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	range	t1_c2	t1_c2	5	NULL	21	Using where; Using index
+1	PRIMARY	t1	range	t1_c2	t1_c2	5	NULL	21	Using index condition
+1	PRIMARY	a	ref	t1_c2	t1_c2	5	test.t1.c2	5	Using index; FirstMatch(t1)
 update t1 set c1=c1+10 where exists (select 'X' from t1 a where a.c2 = t1.c2) and c2 >= 3;
 affected rows: 20
 info: Rows matched: 20  Changed: 20  Warnings: 0
@@ -4723,15 +4646,13 @@ test.t1	analyze	status	OK
 explain select * from t1 where exists (select 'X' from t1 a where a.c2 = t1.c2)
 and c2 >= 3 order by c2;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
-1	PRIMARY	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where; Using filesort
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	range	t1_c2	t1_c2	5	NULL	21	Using where; Using index
+1	PRIMARY	t1	range	t1_c2	t1_c2	5	NULL	21	Using index condition
+1	PRIMARY	a	ref	t1_c2	t1_c2	5	test.t1.c2	5	Using index; FirstMatch(t1)
 explain update t1 set c1=c1+10 where exists (select 'X' from t1 a where a.c2 = t1.c2)
 and c2 >= 3 order by c2;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
-1	PRIMARY	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where; Using filesort
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	range	t1_c2	t1_c2	5	NULL	21	Using where; Using index
+1	PRIMARY	t1	range	t1_c2	t1_c2	5	NULL	21	Using index condition
+1	PRIMARY	a	ref	t1_c2	t1_c2	5	test.t1.c2	5	Using index; FirstMatch(t1)
 update t1 set c1=c1+10 where exists (select 'X' from t1 a where a.c2 = t1.c2)
 and c2 >= 3 order by c2;
 affected rows: 20
@@ -4897,8 +4818,7 @@ explain select * from v1 where c1 <2
 and exists (select 'X' from v1 a where a.c1 = v1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	range	t1_c2	t1_c2	10	NULL	1	Using index condition
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	t1	ref	t1_c2	t1_c2	5	const	8	Using index
+1	PRIMARY	t1	ref	t1_c2	t1_c2	10	const,test.t1.c1	1	Using index; FirstMatch(t1)
 explain update v1 set c1=c1 + 1 where c1 <2
 and exists (select 'X' from v1 a where a.c1 = v1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
@@ -4955,14 +4875,13 @@ test.t1	analyze	status	OK
 explain select * from v1 where c1 <10 and exists (select 'X' from v1 a where a.c2 = v1.c2);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	range	t1_c2	t1_c2	10	NULL	2	Using index condition
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	t1	ref	t1_c2	t1_c2	5	const	8	Using index
+1	PRIMARY	t1	ref	t1_c2	t1_c2	5	const	8	Using index; FirstMatch(t1)
 explain update v1
 set c1=(select max(a.c1)+10 from v1 a where a.c1 = v1.c1)
 where c1 <10 and exists (select 'X' from v1 a where a.c2 = v1.c2);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	range	t1_c2	t1_c2	10	NULL	2	Using index condition
-3	MATERIALIZED	t1	ref	t1_c2	t1_c2	5	const	8	Using index
+3	DEPENDENT SUBQUERY	t1	ref	t1_c2	t1_c2	5	const	8	Using where; Using index
 2	DEPENDENT SUBQUERY	t1	ref	t1_c2	t1_c2	10	const,test.t1.c1	1	Using index
 update v1
 set c1=(select max(a.c1)+10 from v1 a where a.c1 = v1.c1)
@@ -5247,14 +5166,12 @@ explain select * from t1 where c1 <2
 and exists (select 'X' from t1 a where a.c1 = t1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	index	NULL	t1_c2	10	NULL	32	Using index
+1	PRIMARY	a	index	NULL	t1_c2	10	NULL	32	Using where; Using index; FirstMatch(t1); Using join buffer (flat, BNL join)
 explain update t1 set c1=10 where c1 <2
 and exists (select 'X' from t1 a where a.c1 = t1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	index	NULL	t1_c2	10	NULL	32	Using index
+1	PRIMARY	a	index	NULL	t1_c2	10	NULL	32	Using where; Using index; FirstMatch(t1)
 update t1 set c1=10 where c1 <2
 and exists (select 'X' from t1 a where a.c1 = t1.c1);
 affected rows: 3
@@ -5306,14 +5223,12 @@ test.t1	analyze	status	Engine-independent statistics collected
 test.t1	analyze	status	OK
 explain select * from t1 where exists (select 'X' from t1 a where a.c2 = t1.c2) and c2 >= 3;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
-1	PRIMARY	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	range	t1_c2	t1_c2	5	NULL	21	Using where; Using index
+1	PRIMARY	t1	range	t1_c2	t1_c2	5	NULL	21	Using index condition
+1	PRIMARY	a	ref	t1_c2	t1_c2	5	test.t1.c2	5	Using index; FirstMatch(t1)
 explain update t1 set c1=c1+10 where exists (select 'X' from t1 a where a.c2 = t1.c2) and c2 >= 3;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
-1	PRIMARY	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	range	t1_c2	t1_c2	5	NULL	21	Using where; Using index
+1	PRIMARY	t1	range	t1_c2	t1_c2	5	NULL	21	Using index condition
+1	PRIMARY	a	ref	t1_c2	t1_c2	5	test.t1.c2	5	Using index; FirstMatch(t1)
 update t1 set c1=c1+10 where exists (select 'X' from t1 a where a.c2 = t1.c2) and c2 >= 3;
 affected rows: 20
 info: Rows matched: 20  Changed: 20  Warnings: 0
@@ -5364,15 +5279,13 @@ test.t1	analyze	status	OK
 explain select * from t1 where exists (select 'X' from t1 a where a.c2 = t1.c2)
 and c2 >= 3 order by c2;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
-1	PRIMARY	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where; Using filesort
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	range	t1_c2	t1_c2	5	NULL	21	Using where; Using index
+1	PRIMARY	t1	range	t1_c2	t1_c2	5	NULL	21	Using index condition
+1	PRIMARY	a	ref	t1_c2	t1_c2	5	test.t1.c2	5	Using index; FirstMatch(t1)
 explain update t1 set c1=c1+10 where exists (select 'X' from t1 a where a.c2 = t1.c2)
 and c2 >= 3 order by c2;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
-1	PRIMARY	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where; Using filesort
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	range	t1_c2	t1_c2	5	NULL	21	Using where; Using index
+1	PRIMARY	t1	range	t1_c2	t1_c2	5	NULL	21	Using index condition
+1	PRIMARY	a	ref	t1_c2	t1_c2	5	test.t1.c2	5	Using index; FirstMatch(t1)
 update t1 set c1=c1+10 where exists (select 'X' from t1 a where a.c2 = t1.c2)
 and c2 >= 3 order by c2;
 affected rows: 20
@@ -5538,8 +5451,7 @@ explain select * from v1 where c1 <2
 and exists (select 'X' from v1 a where a.c1 = v1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	range	t1_c2	t1_c2	10	NULL	1	Using index condition
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	t1	ref	t1_c2	t1_c2	5	const	8	Using index
+1	PRIMARY	t1	ref	t1_c2	t1_c2	10	const,test.t1.c1	1	Using index; FirstMatch(t1)
 explain update v1 set c1=c1 + 1 where c1 <2
 and exists (select 'X' from v1 a where a.c1 = v1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
@@ -5596,14 +5508,13 @@ test.t1	analyze	status	OK
 explain select * from v1 where c1 <10 and exists (select 'X' from v1 a where a.c2 = v1.c2);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	range	t1_c2	t1_c2	10	NULL	2	Using index condition
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	t1	ref	t1_c2	t1_c2	5	const	8	Using index
+1	PRIMARY	t1	ref	t1_c2	t1_c2	5	const	8	Using index; FirstMatch(t1)
 explain update v1
 set c1=(select max(a.c1)+10 from v1 a where a.c1 = v1.c1)
 where c1 <10 and exists (select 'X' from v1 a where a.c2 = v1.c2);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	range	t1_c2	t1_c2	10	NULL	2	Using index condition
-3	MATERIALIZED	t1	ref	t1_c2	t1_c2	5	const	8	Using index
+3	DEPENDENT SUBQUERY	t1	ref	t1_c2	t1_c2	5	const	8	Using where; Using index
 2	DEPENDENT SUBQUERY	t1	ref	t1_c2	t1_c2	10	const,test.t1.c1	1	Using index
 update v1
 set c1=(select max(a.c1)+10 from v1 a where a.c1 = v1.c1)
@@ -6523,14 +6434,12 @@ explain select * from t1 where c1 <2
 and exists (select 'X' from t1 a where a.c1 = t1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	ALL	NULL	NULL	NULL	NULL	32	
+1	PRIMARY	a	ALL	NULL	NULL	NULL	NULL	32	Using where; FirstMatch(t1); Using join buffer (flat, BNL join)
 explain update t1 set c1=10 where c1 <2
 and exists (select 'X' from t1 a where a.c1 = t1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	ALL	NULL	NULL	NULL	NULL	32	
+1	PRIMARY	a	ALL	NULL	NULL	NULL	NULL	32	Using where; FirstMatch(t1)
 update t1 set c1=10 where c1 <2
 and exists (select 'X' from t1 a where a.c1 = t1.c1);
 affected rows: 3
@@ -6814,8 +6723,7 @@ explain select * from v1 where c1 <2
 and exists (select 'X' from v1 a where a.c1 = v1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
+1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where; FirstMatch(t1); Using join buffer (flat, BNL join)
 explain update v1 set c1=c1 + 1 where c1 <2
 and exists (select 'X' from v1 a where a.c1 = v1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
@@ -6872,14 +6780,13 @@ test.t1	analyze	status	OK
 explain select * from v1 where c1 <10 and exists (select 'X' from v1 a where a.c2 = v1.c2);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
+1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where; FirstMatch(t1); Using join buffer (flat, BNL join)
 explain update v1
 set c1=(select max(a.c1)+10 from v1 a where a.c1 = v1.c1)
 where c1 <10 and exists (select 'X' from v1 a where a.c2 = v1.c2);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-3	MATERIALIZED	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
+3	DEPENDENT SUBQUERY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
 2	DEPENDENT SUBQUERY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
 update v1
 set c1=(select max(a.c1)+10 from v1 a where a.c1 = v1.c1)
@@ -7163,14 +7070,12 @@ explain select * from t1 where c1 <2
 and exists (select 'X' from t1 a where a.c1 = t1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	index	NULL	t1_c2	10	NULL	32	Using index
+1	PRIMARY	a	index	NULL	t1_c2	10	NULL	32	Using where; Using index; FirstMatch(t1); Using join buffer (flat, BNL join)
 explain update t1 set c1=10 where c1 <2
 and exists (select 'X' from t1 a where a.c1 = t1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	index	NULL	t1_c2	10	NULL	32	Using index
+1	PRIMARY	a	index	NULL	t1_c2	10	NULL	32	Using where; Using index; FirstMatch(t1)
 update t1 set c1=10 where c1 <2
 and exists (select 'X' from t1 a where a.c1 = t1.c1);
 affected rows: 3
@@ -7223,13 +7128,11 @@ test.t1	analyze	status	OK
 explain select * from t1 where exists (select 'X' from t1 a where a.c2 = t1.c2) and c2 >= 3;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	range	t1_c2	t1_c2	5	NULL	20	Using where; Using index
+1	PRIMARY	a	ref	t1_c2	t1_c2	5	test.t1.c2	5	Using index; FirstMatch(t1)
 explain update t1 set c1=c1+10 where exists (select 'X' from t1 a where a.c2 = t1.c2) and c2 >= 3;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	range	t1_c2	t1_c2	5	NULL	20	Using where; Using index
+1	PRIMARY	a	ref	t1_c2	t1_c2	5	test.t1.c2	5	Using index; FirstMatch(t1)
 update t1 set c1=c1+10 where exists (select 'X' from t1 a where a.c2 = t1.c2) and c2 >= 3;
 affected rows: 20
 info: Rows matched: 20  Changed: 20  Warnings: 0
@@ -7281,14 +7184,12 @@ explain select * from t1 where exists (select 'X' from t1 a where a.c2 = t1.c2)
 and c2 >= 3 order by c2;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where; Using filesort
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	range	t1_c2	t1_c2	5	NULL	20	Using where; Using index
+1	PRIMARY	a	ref	t1_c2	t1_c2	5	test.t1.c2	5	Using index; FirstMatch(t1)
 explain update t1 set c1=c1+10 where exists (select 'X' from t1 a where a.c2 = t1.c2)
 and c2 >= 3 order by c2;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where; Using filesort
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	range	t1_c2	t1_c2	5	NULL	20	Using where; Using index
+1	PRIMARY	a	ref	t1_c2	t1_c2	5	test.t1.c2	5	Using index; FirstMatch(t1)
 update t1 set c1=c1+10 where exists (select 'X' from t1 a where a.c2 = t1.c2)
 and c2 >= 3 order by c2;
 affected rows: 20
@@ -7454,8 +7355,7 @@ explain select * from v1 where c1 <2
 and exists (select 'X' from v1 a where a.c1 = v1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	range	t1_c2	t1_c2	10	NULL	1	Using index condition
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	t1	ref	t1_c2	t1_c2	5	const	8	Using index
+1	PRIMARY	t1	ref	t1_c2	t1_c2	10	const,test.t1.c1	1	Using index; FirstMatch(t1)
 explain update v1 set c1=c1 + 1 where c1 <2
 and exists (select 'X' from v1 a where a.c1 = v1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
@@ -7512,14 +7412,13 @@ test.t1	analyze	status	OK
 explain select * from v1 where c1 <10 and exists (select 'X' from v1 a where a.c2 = v1.c2);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	range	t1_c2	t1_c2	10	NULL	2	Using index condition
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	t1	ref	t1_c2	t1_c2	5	const	8	Using index
+1	PRIMARY	t1	ref	t1_c2	t1_c2	5	const	8	Using index; FirstMatch(t1)
 explain update v1
 set c1=(select max(a.c1)+10 from v1 a where a.c1 = v1.c1)
 where c1 <10 and exists (select 'X' from v1 a where a.c2 = v1.c2);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	range	t1_c2	t1_c2	10	NULL	2	Using index condition
-3	MATERIALIZED	t1	ref	t1_c2	t1_c2	5	const	8	Using index
+3	DEPENDENT SUBQUERY	t1	ref	t1_c2	t1_c2	5	const	8	Using where; Using index
 2	DEPENDENT SUBQUERY	t1	ref	t1_c2	t1_c2	10	const,test.t1.c1	1	Using index
 update v1
 set c1=(select max(a.c1)+10 from v1 a where a.c1 = v1.c1)
@@ -7803,14 +7702,12 @@ explain select * from t1 where c1 <2
 and exists (select 'X' from t1 a where a.c1 = t1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	index	NULL	t1_c2	10	NULL	32	Using index
+1	PRIMARY	a	index	NULL	t1_c2	10	NULL	32	Using where; Using index; FirstMatch(t1); Using join buffer (flat, BNL join)
 explain update t1 set c1=10 where c1 <2
 and exists (select 'X' from t1 a where a.c1 = t1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	index	NULL	t1_c2	10	NULL	32	Using index
+1	PRIMARY	a	index	NULL	t1_c2	10	NULL	32	Using where; Using index; FirstMatch(t1)
 update t1 set c1=10 where c1 <2
 and exists (select 'X' from t1 a where a.c1 = t1.c1);
 affected rows: 3
@@ -7863,13 +7760,11 @@ test.t1	analyze	status	OK
 explain select * from t1 where exists (select 'X' from t1 a where a.c2 = t1.c2) and c2 >= 3;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	range	t1_c2	t1_c2	5	NULL	20	Using where; Using index
+1	PRIMARY	a	ref	t1_c2	t1_c2	5	test.t1.c2	5	Using index; FirstMatch(t1)
 explain update t1 set c1=c1+10 where exists (select 'X' from t1 a where a.c2 = t1.c2) and c2 >= 3;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	range	t1_c2	t1_c2	5	NULL	20	Using where; Using index
+1	PRIMARY	a	ref	t1_c2	t1_c2	5	test.t1.c2	5	Using index; FirstMatch(t1)
 update t1 set c1=c1+10 where exists (select 'X' from t1 a where a.c2 = t1.c2) and c2 >= 3;
 affected rows: 20
 info: Rows matched: 20  Changed: 20  Warnings: 0
@@ -7921,14 +7816,12 @@ explain select * from t1 where exists (select 'X' from t1 a where a.c2 = t1.c2)
 and c2 >= 3 order by c2;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where; Using filesort
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	range	t1_c2	t1_c2	5	NULL	20	Using where; Using index
+1	PRIMARY	a	ref	t1_c2	t1_c2	5	test.t1.c2	5	Using index; FirstMatch(t1)
 explain update t1 set c1=c1+10 where exists (select 'X' from t1 a where a.c2 = t1.c2)
 and c2 >= 3 order by c2;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where; Using filesort
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	range	t1_c2	t1_c2	5	NULL	20	Using where; Using index
+1	PRIMARY	a	ref	t1_c2	t1_c2	5	test.t1.c2	5	Using index; FirstMatch(t1)
 update t1 set c1=c1+10 where exists (select 'X' from t1 a where a.c2 = t1.c2)
 and c2 >= 3 order by c2;
 affected rows: 20
@@ -8094,8 +7987,7 @@ explain select * from v1 where c1 <2
 and exists (select 'X' from v1 a where a.c1 = v1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	range	t1_c2	t1_c2	10	NULL	1	Using index condition
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	t1	ref	t1_c2	t1_c2	5	const	8	Using index
+1	PRIMARY	t1	ref	t1_c2	t1_c2	10	const,test.t1.c1	1	Using index; FirstMatch(t1)
 explain update v1 set c1=c1 + 1 where c1 <2
 and exists (select 'X' from v1 a where a.c1 = v1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
@@ -8152,14 +8044,13 @@ test.t1	analyze	status	OK
 explain select * from v1 where c1 <10 and exists (select 'X' from v1 a where a.c2 = v1.c2);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	range	t1_c2	t1_c2	10	NULL	2	Using index condition
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	t1	ref	t1_c2	t1_c2	5	const	8	Using index
+1	PRIMARY	t1	ref	t1_c2	t1_c2	5	const	8	Using index; FirstMatch(t1)
 explain update v1
 set c1=(select max(a.c1)+10 from v1 a where a.c1 = v1.c1)
 where c1 <10 and exists (select 'X' from v1 a where a.c2 = v1.c2);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	range	t1_c2	t1_c2	10	NULL	2	Using index condition
-3	MATERIALIZED	t1	ref	t1_c2	t1_c2	5	const	8	Using index
+3	DEPENDENT SUBQUERY	t1	ref	t1_c2	t1_c2	5	const	8	Using where; Using index
 2	DEPENDENT SUBQUERY	t1	ref	t1_c2	t1_c2	10	const,test.t1.c1	1	Using index
 update v1
 set c1=(select max(a.c1)+10 from v1 a where a.c1 = v1.c1)
@@ -8444,14 +8335,12 @@ explain select * from t1 where c1 <2
 and exists (select 'X' from t1 a where a.c1 = t1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	index	NULL	t1_c2	10	NULL	32	Using index
+1	PRIMARY	a	index	NULL	t1_c2	10	NULL	32	Using where; Using index; FirstMatch(t1); Using join buffer (flat, BNL join)
 explain update t1 set c1=10 where c1 <2
 and exists (select 'X' from t1 a where a.c1 = t1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	index	NULL	t1_c2	10	NULL	32	Using index
+1	PRIMARY	a	index	NULL	t1_c2	10	NULL	32	Using where; Using index; FirstMatch(t1)
 update t1 set c1=10 where c1 <2
 and exists (select 'X' from t1 a where a.c1 = t1.c1);
 affected rows: 3
@@ -8504,13 +8393,11 @@ test.t1	analyze	status	OK
 explain select * from t1 where exists (select 'X' from t1 a where a.c2 = t1.c2) and c2 >= 3;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	range	t1_c2	t1_c2	5	NULL	20	Using where; Using index
+1	PRIMARY	a	ref	t1_c2	t1_c2	5	test.t1.c2	5	Using index; FirstMatch(t1)
 explain update t1 set c1=c1+10 where exists (select 'X' from t1 a where a.c2 = t1.c2) and c2 >= 3;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	range	t1_c2	t1_c2	5	NULL	20	Using where; Using index
+1	PRIMARY	a	ref	t1_c2	t1_c2	5	test.t1.c2	5	Using index; FirstMatch(t1)
 update t1 set c1=c1+10 where exists (select 'X' from t1 a where a.c2 = t1.c2) and c2 >= 3;
 affected rows: 20
 info: Rows matched: 20  Changed: 20  Warnings: 0
@@ -8562,14 +8449,12 @@ explain select * from t1 where exists (select 'X' from t1 a where a.c2 = t1.c2)
 and c2 >= 3 order by c2;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where; Using filesort
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	range	t1_c2	t1_c2	5	NULL	20	Using where; Using index
+1	PRIMARY	a	ref	t1_c2	t1_c2	5	test.t1.c2	5	Using index; FirstMatch(t1)
 explain update t1 set c1=c1+10 where exists (select 'X' from t1 a where a.c2 = t1.c2)
 and c2 >= 3 order by c2;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where; Using filesort
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	range	t1_c2	t1_c2	5	NULL	20	Using where; Using index
+1	PRIMARY	a	ref	t1_c2	t1_c2	5	test.t1.c2	5	Using index; FirstMatch(t1)
 update t1 set c1=c1+10 where exists (select 'X' from t1 a where a.c2 = t1.c2)
 and c2 >= 3 order by c2;
 affected rows: 20
@@ -8735,8 +8620,7 @@ explain select * from v1 where c1 <2
 and exists (select 'X' from v1 a where a.c1 = v1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	range	t1_c2	t1_c2	10	NULL	1	Using index condition
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	t1	ref	t1_c2	t1_c2	5	const	8	Using index
+1	PRIMARY	t1	ref	t1_c2	t1_c2	10	const,test.t1.c1	1	Using index; FirstMatch(t1)
 explain update v1 set c1=c1 + 1 where c1 <2
 and exists (select 'X' from v1 a where a.c1 = v1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
@@ -8793,14 +8677,13 @@ test.t1	analyze	status	OK
 explain select * from v1 where c1 <10 and exists (select 'X' from v1 a where a.c2 = v1.c2);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	range	t1_c2	t1_c2	10	NULL	2	Using index condition
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	t1	ref	t1_c2	t1_c2	5	const	8	Using index
+1	PRIMARY	t1	ref	t1_c2	t1_c2	5	const	8	Using index; FirstMatch(t1)
 explain update v1
 set c1=(select max(a.c1)+10 from v1 a where a.c1 = v1.c1)
 where c1 <10 and exists (select 'X' from v1 a where a.c2 = v1.c2);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	range	t1_c2	t1_c2	10	NULL	2	Using index condition
-3	MATERIALIZED	t1	ref	t1_c2	t1_c2	5	const	8	Using index
+3	DEPENDENT SUBQUERY	t1	ref	t1_c2	t1_c2	5	const	8	Using where; Using index
 2	DEPENDENT SUBQUERY	t1	ref	t1_c2	t1_c2	10	const,test.t1.c1	1	Using index
 update v1
 set c1=(select max(a.c1)+10 from v1 a where a.c1 = v1.c1)
@@ -9720,14 +9603,12 @@ explain select * from t1 where c1 <2
 and exists (select 'X' from t1 a where a.c1 = t1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	ALL	NULL	NULL	NULL	NULL	32	
+1	PRIMARY	a	ALL	NULL	NULL	NULL	NULL	32	Using where; FirstMatch(t1); Using join buffer (flat, BNL join)
 explain update t1 set c1=10 where c1 <2
 and exists (select 'X' from t1 a where a.c1 = t1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	ALL	NULL	NULL	NULL	NULL	32	
+1	PRIMARY	a	ALL	NULL	NULL	NULL	NULL	32	Using where; FirstMatch(t1)
 update t1 set c1=10 where c1 <2
 and exists (select 'X' from t1 a where a.c1 = t1.c1);
 affected rows: 3
@@ -10011,8 +9892,7 @@ explain select * from v1 where c1 <2
 and exists (select 'X' from v1 a where a.c1 = v1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
+1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where; FirstMatch(t1); Using join buffer (flat, BNL join)
 explain update v1 set c1=c1 + 1 where c1 <2
 and exists (select 'X' from v1 a where a.c1 = v1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
@@ -10069,14 +9949,13 @@ test.t1	analyze	note	The storage engine for the table doesn't support analyze
 explain select * from v1 where c1 <10 and exists (select 'X' from v1 a where a.c2 = v1.c2);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
+1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where; FirstMatch(t1); Using join buffer (flat, BNL join)
 explain update v1
 set c1=(select max(a.c1)+10 from v1 a where a.c1 = v1.c1)
 where c1 <10 and exists (select 'X' from v1 a where a.c2 = v1.c2);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-3	MATERIALIZED	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
+3	DEPENDENT SUBQUERY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
 2	DEPENDENT SUBQUERY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
 update v1
 set c1=(select max(a.c1)+10 from v1 a where a.c1 = v1.c1)
@@ -10357,14 +10236,12 @@ explain select * from t1 where c1 <2
 and exists (select 'X' from t1 a where a.c1 = t1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	ALL	NULL	NULL	NULL	NULL	32	
+1	PRIMARY	a	ALL	NULL	NULL	NULL	NULL	32	Using where; FirstMatch(t1); Using join buffer (flat, BNL join)
 explain update t1 set c1=10 where c1 <2
 and exists (select 'X' from t1 a where a.c1 = t1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	ALL	NULL	NULL	NULL	NULL	32	
+1	PRIMARY	a	ALL	NULL	NULL	NULL	NULL	32	Using where; FirstMatch(t1)
 update t1 set c1=10 where c1 <2
 and exists (select 'X' from t1 a where a.c1 = t1.c1);
 affected rows: 3
@@ -10699,14 +10576,13 @@ test.t1	analyze	status	Operation failed
 explain select * from v1 where c1 <10 and exists (select 'X' from v1 a where a.c2 = v1.c2);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where
+1	PRIMARY	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where; FirstMatch(t1); Using join buffer (flat, BNL join)
 explain update v1
 set c1=(select max(a.c1)+10 from v1 a where a.c1 = v1.c1)
 where c1 <10 and exists (select 'X' from v1 a where a.c2 = v1.c2);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where
-3	MATERIALIZED	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where
+3	DEPENDENT SUBQUERY	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where
 2	DEPENDENT SUBQUERY	t1	ref	t1_c2	t1_c2	10	const,test.t1.c1	2	
 update v1
 set c1=(select max(a.c1)+10 from v1 a where a.c1 = v1.c1)
@@ -10984,14 +10860,12 @@ explain select * from t1 where c1 <2
 and exists (select 'X' from t1 a where a.c1 = t1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	ALL	NULL	NULL	NULL	NULL	32	
+1	PRIMARY	a	ALL	NULL	NULL	NULL	NULL	32	Using where; FirstMatch(t1); Using join buffer (flat, BNL join)
 explain update t1 set c1=10 where c1 <2
 and exists (select 'X' from t1 a where a.c1 = t1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	ALL	NULL	NULL	NULL	NULL	32	
+1	PRIMARY	a	ALL	NULL	NULL	NULL	NULL	32	Using where; FirstMatch(t1)
 update t1 set c1=10 where c1 <2
 and exists (select 'X' from t1 a where a.c1 = t1.c1);
 affected rows: 3
@@ -11326,14 +11200,13 @@ test.t1	analyze	status	Operation failed
 explain select * from v1 where c1 <10 and exists (select 'X' from v1 a where a.c2 = v1.c2);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where
+1	PRIMARY	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where; FirstMatch(t1); Using join buffer (flat, BNL join)
 explain update v1
 set c1=(select max(a.c1)+10 from v1 a where a.c1 = v1.c1)
 where c1 <10 and exists (select 'X' from v1 a where a.c2 = v1.c2);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where
-3	MATERIALIZED	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where
+3	DEPENDENT SUBQUERY	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where
 2	DEPENDENT SUBQUERY	t1	ref	t1_c2	t1_c2	10	const,test.t1.c1	2	
 update v1
 set c1=(select max(a.c1)+10 from v1 a where a.c1 = v1.c1)
@@ -11612,14 +11485,12 @@ explain select * from t1 where c1 <2
 and exists (select 'X' from t1 a where a.c1 = t1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	ALL	NULL	NULL	NULL	NULL	32	
+1	PRIMARY	a	ALL	NULL	NULL	NULL	NULL	32	Using where; FirstMatch(t1); Using join buffer (flat, BNL join)
 explain update t1 set c1=10 where c1 <2
 and exists (select 'X' from t1 a where a.c1 = t1.c1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	NULL	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	a	ALL	NULL	NULL	NULL	NULL	32	
+1	PRIMARY	a	ALL	NULL	NULL	NULL	NULL	32	Using where; FirstMatch(t1)
 update t1 set c1=10 where c1 <2
 and exists (select 'X' from t1 a where a.c1 = t1.c1);
 affected rows: 3
@@ -11954,14 +11825,13 @@ test.t1	analyze	status	Operation failed
 explain select * from v1 where c1 <10 and exists (select 'X' from v1 a where a.c2 = v1.c2);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where
-1	PRIMARY	<subquery2>	eq_ref	distinct_key	distinct_key	4	func	1	
-2	MATERIALIZED	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where
+1	PRIMARY	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where; FirstMatch(t1); Using join buffer (flat, BNL join)
 explain update v1
 set c1=(select max(a.c1)+10 from v1 a where a.c1 = v1.c1)
 where c1 <10 and exists (select 'X' from v1 a where a.c2 = v1.c2);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where
-3	MATERIALIZED	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where
+3	DEPENDENT SUBQUERY	t1	ALL	t1_c2	NULL	NULL	NULL	32	Using where
 2	DEPENDENT SUBQUERY	t1	ref	t1_c2	t1_c2	10	const,test.t1.c1	2	
 update v1
 set c1=(select max(a.c1)+10 from v1 a where a.c1 = v1.c1)
