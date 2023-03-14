@@ -504,7 +504,6 @@ inline void trx_t::release_locks()
   lock.table_locks.clear();
   reset_skip_lock_inheritance();
   id= 0;
-  max_inactive_id= 0;
   while (dict_table_t *table= UT_LIST_GET_FIRST(lock.evicted_tables))
   {
     UT_LIST_REMOVE(lock.evicted_tables, table);
