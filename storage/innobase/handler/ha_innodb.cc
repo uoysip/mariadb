@@ -4558,7 +4558,13 @@ innobase_commit(
 
 		trx_mark_sql_stat_end(trx);
 		if (UNIV_UNLIKELY(trx->error_state != DB_SUCCESS)) {
-			trx_rollback_for_mysql(trx);
+			trx_savept_t savept;
+			savept.least_undo_no = 0;
+			trx->rollback(&savept);
+			/* MariaDB will roll back the entire transaction. */
+			trx->bulk_insert = false;
+			trx->last_sql_stat_start.least_undo_no = 0;
+			trx->savepoints_discard();
 			DBUG_RETURN(1);
 		}
 	}
@@ -16995,7 +17001,13 @@ innobase_xa_prepare(
 
 		trx_mark_sql_stat_end(trx);
 		if (UNIV_UNLIKELY(trx->error_state != DB_SUCCESS)) {
-			trx_rollback_for_mysql(trx);
+			trx_savept_t savept;
+			savept.least_undo_no = 0;
+			trx->rollback(&savept);
+			/* MariaDB will roll back the entire transaction. */
+			trx->bulk_insert = false;
+			trx->last_sql_stat_start.least_undo_no = 0;
+			trx->savepoints_discard();
 			return 1;
 		}
 	}
