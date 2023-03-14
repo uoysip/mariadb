@@ -454,6 +454,9 @@ got_block:
 			goto not_found;
 		}
 		if (!buf_pool.try_LRU_scan) {
+			mysql_mutex_lock(&buf_pool.flush_list_mutex);
+			buf_pool.page_cleaner_wakeup(true);
+			mysql_mutex_unlock(&buf_pool.flush_list_mutex);
 			my_cond_wait(&buf_pool.done_free,
 				     &buf_pool.mutex.m_mutex);
 		}
@@ -1041,7 +1044,8 @@ buf_LRU_block_free_non_file_page(
 	} else {
 		UT_LIST_ADD_FIRST(buf_pool.free, &block->page);
 		ut_d(block->page.in_free_list = true);
-		pthread_cond_signal(&buf_pool.done_free);
+		buf_pool.try_LRU_scan= true;
+		pthread_cond_broadcast(&buf_pool.done_free);
 	}
 
 	MEM_NOACCESS(block->page.frame, srv_page_size);

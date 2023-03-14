@@ -1498,6 +1498,11 @@ public:
         n_chunks_new / 4 * chunks->size;
   }
 
+  /** @return whether the buffer pool has run out */
+  TPOOL_SUPPRESS_TSAN
+  bool ran_out() const
+  { return UNIV_UNLIKELY(!try_LRU_scan || !UT_LIST_GET_LEN(free)); }
+
   /** @return whether the buffer pool is shrinking */
   inline bool is_shrinking() const
   {
@@ -1773,8 +1778,9 @@ public:
     mysql_mutex_assert_owner(&flush_list_mutex);
     return page_cleaner_status & PAGE_CLEANER_IDLE;
   }
-  /** Wake up the page cleaner if needed */
-  void page_cleaner_wakeup();
+  /** Wake up the page cleaner if needed.
+  @param for_LRU  whether to wake up for LRU eviction */
+  void page_cleaner_wakeup(bool for_LRU= false);
 
   /** Register whether an explicit wakeup of the page cleaner is needed */
   void page_cleaner_set_idle(bool deep_sleep)
@@ -1801,8 +1807,7 @@ public:
 					purposes without holding any
 					mutex or latch */
   /** Cleared when buf_LRU_get_free_block() fails.
-  Whenever a block has been evicted in buf_page_write_complete() or
-  buf_flush_LRU(), this will be set and done_free will be broadcast.
+  Set whenever the free list grows, along with a broadcast of done_free.
   Protected by buf_pool.mutex. */
   Atomic_relaxed<bool> try_LRU_scan;
 	/* @} */
@@ -1813,8 +1818,8 @@ public:
 	UT_LIST_BASE_NODE_T(buf_page_t) free;
 					/*!< base node of the free
 					block list */
-  /** signaled each time when the free list grows and
-  broadcast each time try_LRU_scan is set; protected by mutex */
+  /** broadcast each time when the free list grows or try_LRU_scan is set;
+  protected by mutex */
   pthread_cond_t done_free;
 
 	UT_LIST_BASE_NODE_T(buf_page_t) withdraw;
