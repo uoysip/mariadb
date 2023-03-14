@@ -332,15 +332,19 @@ inline void buf_page_t::write_complete(bool temporary)
   lock.u_unlock(true);
 }
 
-bool buf_pool_t::n_flush_dec()
+inline void buf_pool_t::n_flush_inc()
+{
+  mysql_mutex_assert_owner(&flush_list_mutex);
+  page_cleaner_status+= LRU_FLUSH;
+}
+
+inline void buf_pool_t::n_flush_dec()
 {
   mysql_mutex_lock(&flush_list_mutex);
   ut_ad(page_cleaner_status >= LRU_FLUSH);
-  const bool last= (page_cleaner_status-= LRU_FLUSH) < LRU_FLUSH;
-  if (last)
+  if ((page_cleaner_status-= LRU_FLUSH) < LRU_FLUSH)
     pthread_cond_broadcast(&done_flush_LRU);
   mysql_mutex_unlock(&flush_list_mutex);
-  return last;
 }
 
 /** Complete write of a file page from buf_pool.
@@ -1684,23 +1688,12 @@ ulint buf_flush_LRU(ulint max_n, bool evict)
 {
   mysql_mutex_assert_owner(&buf_pool.mutex);
 
-  if (evict)
-  {
-    mysql_mutex_lock(&buf_pool.flush_list_mutex);
-    const auto n= buf_pool.n_flush();
-    if (!n)
-      buf_pool.n_flush_inc();
-    mysql_mutex_unlock(&buf_pool.flush_list_mutex);
-    if (n)
-      return 0;
-  }
-
   flush_counters_t n;
   buf_do_LRU_batch(max_n, evict, &n);
 
   const ulint pages= evict ? n.evicted + n.flushed : n.flushed;
 
-  if (evict ? buf_pool.n_flush_dec() : n.evicted)
+  if (n.evicted)
   {
     buf_pool.try_LRU_scan= true;
     pthread_cond_broadcast(&buf_pool.done_free);
@@ -2372,15 +2365,10 @@ static void buf_flush_page_cleaner()
       goto unemployed;
     }
 
-    flush_counters_t c;
-    buf_do_LRU_batch(n >= n_flushed ? n - n_flushed : 0, false, &c);
-
-    if (c.evicted)
-      pthread_cond_broadcast(&buf_pool.done_free);
-
+    n= buf_flush_LRU(n >= n_flushed ? n - n_flushed : 0, false);
     mysql_mutex_unlock(&buf_pool.mutex);
 
-    last_pages+= c.flushed;
+    last_pages+= n;
 
     if (!idle_flush)
       goto end_of_batch;

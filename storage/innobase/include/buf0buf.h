@@ -1744,15 +1744,10 @@ public:
   }
 
   /** Increment the number of pending LRU flush */
-  void n_flush_inc()
-  {
-    mysql_mutex_assert_owner(&flush_list_mutex);
-    page_cleaner_status+= LRU_FLUSH;
-  }
+  inline void n_flush_inc();
 
-  /** Decrement the number of pending LRU flush
-  @return whether this was the last pending operation */
-  bool n_flush_dec();
+  /** Decrement the number of pending LRU flush */
+  inline void n_flush_dec();
 
   /** @return whether flush_list flushing is active */
   bool flush_list_active() const
