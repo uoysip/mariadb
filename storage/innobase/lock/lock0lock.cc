@@ -1064,13 +1064,16 @@ lock_sec_rec_some_has_impl(
 
   const trx_id_t max_trx_id= page_get_max_trx_id(page_align(rec));
 
-  if ((caller_trx->id > max_trx_id &&
-       !trx_sys.find_same_or_older(caller_trx, max_trx_id)) ||
+  /* Note: It is possible to have caller_trx->id == 0 in a locking read
+  if caller_trx has not modified any persistent tables. */
+  if (!trx_sys.find_same_or_older(caller_trx, max_trx_id) ||
       !lock_check_trx_id_sanity(max_trx_id, rec, index, offsets))
     return nullptr;
 
-  /* In this case it is possible that some transaction has an implicit
-  x-lock. We have to look in the clustered index. */
+  /* We checked above that some active (or XA PREPARE) transaction exists
+  that is older than PAGE_MAX_TRX_ID. That is, some transaction may be
+  holding an implicit lock on the record. We have to look up the
+  clustered index record to find if it is (or was) the case. */
   return row_vers_impl_x_locked(caller_trx, rec, index, offsets);
 }
 
@@ -5536,8 +5539,6 @@ lock_sec_rec_read_check_and_lock(
 	}
 
 	if (!page_rec_is_supremum(rec)
-	    && trx_sys.find_same_or_older(
-		       trx, page_get_max_trx_id(block->page.frame))
 	    && lock_rec_convert_impl_to_expl<false>(
 		       trx, block->page.id(), rec, index, offsets)
 	    && gap_mode == LOCK_REC_NOT_GAP) {
